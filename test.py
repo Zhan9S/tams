@@ -57,26 +57,28 @@ def _init_ffmpeg_env_core():
 
 # 成果类型匹配规则（OCR识别用）
 achievement_rules = {
-    '期刊论文': {'pattern': r'[学报|期刊|杂志].*卷.*期|ISSN:\d+',
+    '期刊论文': {'pattern': r'[学报 | 期刊 | 杂志].*卷.*期 | ISSN:\d+',
                  'keywords': ['期刊', '学报', '论文', '发表', '卷', '期'], 'priority': 1},
-    '发明专利': {'pattern': r'ZL\d{4}\d{8}(\.\d+)?|发明专利申请号|公开号',
+    '发明专利': {'pattern': r'ZL\d{4}\d{8}(\.\d+)?|发明专利申请号 | 公开号',
                  'keywords': ['发明', '专利', 'ZL', '申请号', '公开号'], 'priority': 1},
     '实用新型专利': {'pattern': r'实用新型专利|ZL\d{4}2\d{7}', 'keywords': ['实用新型', '专利', 'ZL'], 'priority': 1},
-    '会议论文': {'pattern': r'会议论文|会议集|Proceedings', 'keywords': ['会议', '研讨会', '论坛'],
+    '会议论文': {'pattern': r'会议论文 | 会议集 |Proceedings', 'keywords': ['会议', '研讨会', '论坛'],
                  'priority': 2},
-    '教材': {'pattern': r'教材|ISBN[:：]?\s*\d+|主编[:：]?|副主编[:：]?|出版社[:：]?',
+    '教材': {'pattern': r'教材|ISBN[:：]?\s*\d+|主编 [:：]?|副主编 [:：]?|出版社 [:：]?',
              'keywords': ['教材', '主编', '副主编', 'ISBN', '出版社', '规划教材', '行业教材'],
              'priority': 2},
-    '专著': {'pattern': r'专著|ISBN:\d+|独著|合著', 'keywords': ['专著', '独著', '合著', 'ISBN'], 'priority': 2},
-    '软著': {'pattern': r'计算机软件著作权|软著登字第\d+号', 'keywords': ['软著', '软件著作权', '著作权'],
+    '专著': {'pattern': r'专著|ISBN:\d+|独著 | 合著', 'keywords': ['专著', '独著', '合著', 'ISBN'], 'priority': 2},
+    '软著': {'pattern': r'计算机软件著作权 | 软著登字第\d+ 号', 'keywords': ['软著', '软件著作权', '著作权'],
              'priority': 3},
-    '成果获奖': {'pattern': r'成果奖|科技奖|一等奖|二等奖', 'keywords': ['成果', '获奖', '科技奖', '一等奖', '二等奖'],
+    '教学成果获奖': {'pattern': r'成果奖 | 科技奖 | 一等奖 | 二等奖', 'keywords': ['成果', '获奖', '科技奖', '一等奖', '二等奖'],
                  'priority': 3},
-    '教学竞赛获奖': {'pattern': r'教学竞赛|教学奖|课堂教学', 'keywords': ['教学竞赛', '教学奖', '课堂教学'],
+    '教学竞赛获奖': {'pattern': r'教学竞赛 | 教学奖 | 课堂教学', 'keywords': ['教学竞赛', '教学奖', '课堂教学'],
                      'priority': 3},
-    '指导学生获奖': {'pattern': r'指导学生|学生竞赛|大学生.*竞赛', 'keywords': ['指导学生', '学生', '竞赛', '获奖'],
-                     'priority': 4},
-    '其他': {'pattern': r'.*', 'keywords': [], 'priority': 99}
+    '指导学生获奖': {'pattern': r'指导老师 | 学生竞赛 | 大学生.*竞赛 | 参赛同学', 'keywords': ['指导老师', '学生', '竞赛', '获奖'],
+                     'priority': 2},
+    '教研教改和课程建设项目': {'pattern': r'教学改革研究 | 教改 | 课程建设 | 一流本科课程 | 课程思政 | 高等学校教育教学改革',
+                                'keywords': ['教学改革', '教改', '课程建设', '一流课程', '课程思政', '立项', '湖南省普通高等学校'],
+                                'priority': 1}
 }
 
 # 配置日志
@@ -216,15 +218,66 @@ class UserTeam(db.Model):
     __table_args__ = (db.UniqueConstraint('user_id', 'team_id', name='_user_team_uc'),)
 
 
+class AchievementContributor(db.Model):
+    """成果关联人表（多对多，支持一个成果有多个关联用户）"""
+    id = db.Column(db.Integer, primary_key=True)
+    achievement_type = db.Column(db.String(50), nullable=False,
+                                 comment='成果类型：journal_paper/conference_paper/textbook/monograph/etc.')
+    achievement_id = db.Column(db.Integer, nullable=False, comment='成果 ID')
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='关联用户 ID')
+    contributor_role = db.Column(db.String(50), default='author',
+                                 comment='贡献角色：author/corresponding_author/editor/compile/etc.')
+    is_creator = db.Column(db.Boolean, default=False, comment='是否为录入者')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('achievement_type', 'achievement_id', 'user_id', name='_achievement_user_uc'),
+    )
+
+    user = db.relationship('User', backref='achievement_contributions')
+
+
+class InclusionType(db.Model):
+    """论文收录类型表（字典表）"""
+    id = db.Column(db.Integer, primary_key=True)
+    type_name = db.Column(db.String(100), unique=True, nullable=False, comment='收录类型名称')
+    type_code = db.Column(db.String(50), unique=True, nullable=False, comment='收录类型代码')
+    description = db.Column(db.Text, comment='描述说明')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 反向引用
+    journal_papers = db.relationship('JournalPaper', secondary='journal_paper_inclusion_relation', back_populates='inclusion_types')
+
+
+class JournalPaperInclusionRelation(db.Model):
+    """期刊论文 - 收录类型关联表（多对多）"""
+    id = db.Column(db.Integer, primary_key=True)
+    paper_id = db.Column(db.Integer, db.ForeignKey('journal_paper.id'), nullable=False)
+    inclusion_type_id = db.Column(db.Integer, db.ForeignKey('inclusion_type.id'), nullable=False)
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # 联合唯一索引（同一篇论文的同一收录类型只能有一条记录）
+    __table_args__ = (db.UniqueConstraint('paper_id', 'inclusion_type_id', name='_paper_inclusion_uc'),)
+
+    # 关联关系
+    paper = db.relationship('JournalPaper', back_populates='inclusion_relations', overlaps='journal_papers')
+    inclusion_type = db.relationship('InclusionType', backref=db.backref('paper_relations', overlaps='journal_papers'), overlaps='journal_papers')
+
+
 class JournalPaper(db.Model):
     """期刊论文表（完整字段）"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 归属用户
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 论文名称
     authors = db.Column(db.Text, nullable=False)  # 论文作者（逗号分隔）
     corresponding_authors = db.Column(db.Text)  # 通讯作者（逗号分隔）
     journal_name = db.Column(db.String(200), nullable=False)  # 期刊名称
-    inclusion_status = db.Column(db.Text)  # 收录情况（逗号分隔）
+    inclusion_status = db.Column(db.Text)  # 收录情况（逗号分隔，保留兼容旧数据）
+    inclusion_type_ids = db.Column(db.Text, default='', comment='收录类型 ID（逗号分隔，关联 inclusion_type 表）')
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，包含录入者和共同作者）')
     year = db.Column(db.Integer)  # 年
     volume = db.Column(db.String(50))  # 卷
     issue = db.Column(db.String(50))  # 期
@@ -235,38 +288,67 @@ class JournalPaper(db.Model):
     attachment = db.Column(db.String(256))  # 论文附件路径
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    # 关联关系
-    user = db.relationship('User', backref='journal_papers')
+    user = db.relationship('User', backref='journal_papers_owned', foreign_keys=[user_id])
+    inclusion_relations = db.relationship('JournalPaperInclusionRelation', back_populates='paper', cascade='all, delete-orphan', overlaps='journal_papers')
+    inclusion_types = db.relationship('InclusionType', secondary='journal_paper_inclusion_relation', back_populates='journal_papers', viewonly=True)
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(JournalPaper.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='journal_paper')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
 
 
 class ConferencePaper(db.Model):
     """会议论文表（完整字段）"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 归属用户
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 论文名称
     authors = db.Column(db.Text, nullable=False)  # 论文作者（逗号分隔）
     corresponding_authors = db.Column(db.Text)  # 通讯作者（逗号分隔）
     conference_name = db.Column(db.String(200), nullable=False)  # 会议名称
-    conference_time = db.Column(db.Date)  # 会议时间
+    conference_time = db.Column(db.Text)  # 会议时间（文本格式，如"2026.03.11-2026.03.13"）
+    conference_start_date = db.Column(db.Date)  # 会议开始日期
+    conference_end_date = db.Column(db.Date)  # 会议结束日期
     conference_place = db.Column(db.String(200))  # 会议地点
     page_range = db.Column(db.String(50))  # 起止页码
     doi = db.Column(db.String(200))  # DOI
     publish_year = db.Column(db.Integer)  # 发表年份
     attachment = db.Column(db.String(256))  # 论文附件路径
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，包含录入者和共同作者）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    # 关联关系
-    user = db.relationship('User', backref='conference_papers')
+    user = db.relationship('User', backref='conference_papers_owned', foreign_keys=[user_id])
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(ConferencePaper.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='conference_paper')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
+
+class TextbookLevel(db.Model):
+    """教材级别表（字典表）"""
+    id = db.Column(db.Integer, primary_key=True)
+    level_name = db.Column(db.String(100), unique=True, nullable=False, comment='级别名称')
+    level_code = db.Column(db.String(50), unique=True, nullable=False, comment='级别代码')
+    description = db.Column(db.Text, comment='描述说明')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 反向引用
+    textbooks = db.relationship('Textbook', back_populates='level')
 
 
 class Textbook(db.Model):
     """教材表（更新字段）"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 教材名称
     textbook_series = db.Column(db.String(500))  # 教材系列（顿号分隔）
     chief_editor = db.Column(db.Text)  # 主编（顿号分隔）
@@ -274,143 +356,361 @@ class Textbook(db.Model):
     editorial_board = db.Column(db.Text)  # 编委（顿号分隔）
     publisher = db.Column(db.String(200))  # 出版社
     isbn = db.Column(db.String(50))  # ISBN
-    cip_number = db.Column(db.String(100))  # CIP核字号
+    cip_number = db.Column(db.String(100))  # CIP 核字号
     publication_year = db.Column(db.Integer)  # 出版年份
     publication_month = db.Column(db.Integer)  # 出版月份
     publish_date = db.Column(db.Date)  # 出版日期（兼容原有字段）
     edition = db.Column(db.String(50))  # 版次
-    word_count = db.Column(db.String(50))  # 字数（如318 千字）
-    price = db.Column(db.String(20))  # 定价（如49.00）
-    textbook_level = db.Column(db.String(50))  # 教材级别（下拉选择）
+    word_count = db.Column(db.String(50))  # 字数（如 318 千字）
+    price = db.Column(db.String(20))  # 定价（如 49.00）
+    textbook_level_id = db.Column(db.Integer, db.ForeignKey('textbook_level.id'), comment='教材级别 ID（关联 textbook_level 表）')
     textbook_type = db.Column(db.String(50))  # 教材类型（下拉选择）
     applicable_majors = db.Column(db.Text)  # 适用专业
     remarks = db.Column(db.Text)  # 备注
-    textbook_attachment = db.Column(db.String(256))  # 教材附件（替换原attachment）
+    textbook_attachment = db.Column(db.String(256))  # 教材附件（替换原 attachment）
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，包含录入者和编者）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='textbooks')
+    user = db.relationship('User', backref='textbooks_owned', foreign_keys=[user_id])
+    level = db.relationship('TextbookLevel', back_populates='textbooks')
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(Textbook.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='textbook')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
 
 
 class Monograph(db.Model):
     """专著表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 专著名称
-    isbn = db.Column(db.String(50))  # ISBN
+    textbook_series = db.Column(db.String(500))  # 专著系列（顿号分隔）
+    chief_editor = db.Column(db.Text)  # 主编（顿号分隔）
+    associate_editors = db.Column(db.Text)  # 副主编（顿号分隔）
+    editorial_board = db.Column(db.Text)  # 编委（顿号分隔）
     publisher = db.Column(db.String(200))  # 出版社
-    publish_date = db.Column(db.Date)  # 出版日期
-    author_role = db.Column(db.String(50))  # 独著/合著/主编
-    attachment = db.Column(db.String(256))  # 附件路径
+    isbn = db.Column(db.String(50))  # ISBN
+    cip_number = db.Column(db.String(100))  # CIP 核字号
+    publication_year = db.Column(db.Integer)  # 出版年份
+    publication_month = db.Column(db.Integer)  # 出版月份
+    publish_date = db.Column(db.Date)  # 出版日期（兼容扩展）
+    edition = db.Column(db.String(50))  # 版次（如第 1 版、修订版）
+    word_count = db.Column(db.String(50))  # 字数（如"318 千字"）
+    price = db.Column(db.String(20))  # 定价（如"49.00 元"）
+    monograph_type = db.Column(db.String(50))  # 专著类型（下拉选择）
+    applicable_majors = db.Column(db.Text)  # 适用专业
+    remarks = db.Column(db.Text)  # 备注
+    monograph_attachment = db.Column(db.String(256))  # 专著附件
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，包含录入者和著者）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='monographs')
+    user = db.relationship('User', backref='monographs_owned', foreign_keys=[user_id])
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(Monograph.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='monograph')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
+
+class ProjectType(db.Model):
+    """项目类型表"""
+    id = db.Column(db.Integer, primary_key=True)
+    type_name = db.Column(db.String(100), nullable=False, comment='项目类型名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProjectType {self.type_name}>'
+
+
+class ProjectStatus(db.Model):
+    """项目状态表"""
+    id = db.Column(db.Integer, primary_key=True)
+    status_name = db.Column(db.String(50), nullable=False, comment='项目状态名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProjectStatus {self.status_name}>'
+
+
+class ProjectLevel(db.Model):
+    """项目级别表"""
+    id = db.Column(db.Integer, primary_key=True)
+    level_name = db.Column(db.String(50), nullable=False, comment='项目级别名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProjectLevel {self.level_name}>'
+
+
+class ProjectCategory(db.Model):
+    """项目类别表"""
+    id = db.Column(db.Integer, primary_key=True)
+    category_name = db.Column(db.String(100), nullable=False, comment='项目类别名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<ProjectCategory {self.category_name}>'
 
 
 class TeachingProject(db.Model):
-    """教研教改项目表"""
+    """教研教改和课程建设项目表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(500), nullable=False)  # 项目名称
-    project_type = db.Column(db.String(100))  # 项目类型（校级/省级/国家级）
-    funding = db.Column(db.String(100))  # 经费
-    start_date = db.Column(db.Date)  # 开始时间
-    end_date = db.Column(db.Date)  # 结束时间
-    status = db.Column(db.String(50))  # 项目状态（在研/结题/延期）
-    attachment = db.Column(db.String(256))  # 附件路径
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
+    title = db.Column(db.String(500), nullable=False, comment='项目名称')
+    project_code = db.Column(db.String(100), comment='项目编号')
+    project_leader = db.Column(db.String(100), comment='项目负责人')
+    project_members = db.Column(db.Text, comment='项目参与人（顿号分隔）')
+    approval_department = db.Column(db.String(200), comment='项目批准部门')
+    approval_date = db.Column(db.Date, comment='项目立项时间')
+    project_type_id = db.Column(db.Integer, db.ForeignKey('project_type.id'), comment='项目类型 ID')
+    project_level_id = db.Column(db.Integer, db.ForeignKey('project_level.id'), comment='项目级别 ID')
+    project_category_id = db.Column(db.Integer, db.ForeignKey('project_category.id'), comment='项目类别 ID')
+    project_status_id = db.Column(db.Integer, db.ForeignKey('project_status.id'), comment='项目状态 ID')
+    funding = db.Column(db.Numeric(10, 2), comment='项目经费（元）')
+    start_date = db.Column(db.Date, comment='项目开始时间')
+    end_date = db.Column(db.Date, comment='项目结束时间')
+    attachment = db.Column(db.String(256), comment='附件路径')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='teaching_projects')
+    # 关联关系
+    user = db.relationship('User', backref='teaching_projects_owned', foreign_keys=[user_id])
+    project_type = db.relationship('ProjectType', backref='teaching_projects')
+    project_level = db.relationship('ProjectLevel', backref='teaching_projects')
+    project_category = db.relationship('ProjectCategory', backref='teaching_projects')
+    project_status = db.relationship('ProjectStatus', backref='teaching_projects')
+
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(TeachingProject.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='teaching_project')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
+
+class PatentType(db.Model):
+    """专利类型表"""
+    id = db.Column(db.Integer, primary_key=True)
+    type_name = db.Column(db.String(50), unique=True, nullable=False, comment='专利类型名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PatentType {self.type_name}>'
+
+
+class PatentStatus(db.Model):
+    """专利状态表"""
+    id = db.Column(db.Integer, primary_key=True)
+    status_name = db.Column(db.String(50), unique=True, nullable=False, comment='专利状态名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<PatentStatus {self.status_name}>'
 
 
 class Patent(db.Model):
     """专利表（发明/实用新型/外观）"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 专利名称
-    patent_type = db.Column(db.String(50), nullable=False)  # 发明专利/实用新型专利/外观专利
-    patent_number = db.Column(db.String(100), unique=True)  # 专利号
-    apply_date = db.Column(db.Date)  # 申请日期
-    grant_date = db.Column(db.Date)  # 授权日期
-    status = db.Column(db.String(50))  # 专利状态（申请中/已授权/失效）
-    attachment = db.Column(db.String(256))  # 附件路径
+    patent_type_id = db.Column(db.Integer, db.ForeignKey('patent_type.id'), nullable=False, comment='专利类型 ID（关联 patent_type 表）')
+    patentee = db.Column(db.String(200), comment='专利权人')
+    address = db.Column(db.String(500), comment='地址')
+    inventors = db.Column(db.Text, comment='发明人（多人用分号分隔）')
+    patent_status_id = db.Column(db.Integer, db.ForeignKey('patent_status.id'), comment='专利状态 ID（关联 patent_status 表）')
+    patent_number = db.Column(db.String(100), unique=True, comment='专利号')
+    grant_announcement_number = db.Column(db.String(100), comment='授权公告号')
+    apply_date = db.Column(db.Date, comment='专利申请日')
+    grant_announcement_date = db.Column(db.Date, comment='授权公告日')
+    applicant_at_apply_date = db.Column(db.String(200), comment='申请日时申请人（发明专利）')
+    inventor_at_apply_date = db.Column(db.String(200), comment='申请日时发明人（发明专利）')
+    attachment = db.Column(db.String(256), comment='附件路径')
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，发明人）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='patents')
+    user = db.relationship('User', backref='patents_owned', foreign_keys=[user_id])
+    patent_type = db.relationship('PatentType', backref='patents')
+    patent_status = db.relationship('PatentStatus', backref='patents')
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(Patent.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='patent')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
+
+
 
 
 class SoftwareCopyright(db.Model):
     """软件著作表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(500), nullable=False)  # 软著名称
-    copyright_number = db.Column(db.String(100), unique=True)  # 登记号
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
+    title = db.Column(db.String(500), nullable=False)  # 软件名称
+    copyright_owner = db.Column(db.Text)  # 著作权人（多人用分号分隔）
+    completion_date = db.Column(db.Date)  # 开发完成日期
+    first_publication_date = db.Column(db.Date)  # 首次发表日期
+    right_acquisition_method = db.Column(db.String(100))  # 权利取得方式
+    right_scope = db.Column(db.String(200))  # 权利范围
+    copyright_number = db.Column(db.String(100))  # 登记号
+    certificate_number = db.Column(db.String(100))  # 证书号
     register_date = db.Column(db.Date)  # 登记日期
     attachment = db.Column(db.String(256))  # 附件路径
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，著作权人）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='software_copyrights')
+    user = db.relationship('User', backref='software_copyrights_owned', foreign_keys=[user_id])
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(SoftwareCopyright.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='software_copyright')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
 
 
 class TeachingAchievementAward(db.Model):
     """教学成果获奖表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    title = db.Column(db.String(500), nullable=False)  # 获奖名称
-    award_level = db.Column(db.String(100))  # 获奖等级（校级/省级/国家级）
-    award_rank = db.Column(db.String(50))  # 一等奖/二等奖/三等奖
-    award_date = db.Column(db.Date)  # 获奖日期
-    attachment = db.Column(db.String(256))  # 附件路径
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
+    title = db.Column(db.String(500), nullable=False, comment='成果名称')
+    achievement_type_id = db.Column(db.Integer, db.ForeignKey('teaching_achievement_type.id'), nullable=True, comment='教学成果奖类型 ID（关联 teaching_achievement_type 表）')
+    achievement_level_id = db.Column(db.Integer, db.ForeignKey('achievement_level.id'), nullable=True, comment='成果等级 ID（关联 achievement_level 表）')
+    main_contributors = db.Column(db.Text, comment='主要完成人（多人用分号分隔）')
+    completing_units = db.Column(db.Text, comment='成果完成单位（多个用分号分隔）')
+    award_year = db.Column(db.Integer, comment='获奖年度')
+    award_rank_id = db.Column(db.Integer, db.ForeignKey('award_rank.id'), nullable=True, comment='获奖等级 ID（关联 award_rank 表）')
+    certificate_number = db.Column(db.String(100), comment='证书编号')
+    awarding_unit = db.Column(db.String(200), comment='颁奖单位')
+    award_date = db.Column(db.Date, comment='获奖日期')
+    attachment = db.Column(db.String(256), comment='附件路径')
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，获奖完成人）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='teaching_achievement_awards')
+    user = db.relationship('User', backref='teaching_achievement_awards_owned', foreign_keys=[user_id])
+    achievement_type = db.relationship('TeachingAchievementType', backref='teaching_achievement_awards')
+    achievement_level = db.relationship('AchievementLevel', backref='teaching_achievement_awards')
+    award_rank = db.relationship('AwardRank', backref='teaching_achievement_awards')
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(TeachingAchievementAward.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='teaching_achievement_award')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
+
+
+class TeachingAchievementType(db.Model):
+    """教学成果奖类型表（管理员可维护）"""
+    id = db.Column(db.Integer, primary_key=True)
+    type_name = db.Column(db.String(100), unique=True, nullable=False, comment='类型名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<TeachingAchievementType {self.type_name}>'
+
+
+class AchievementLevel(db.Model):
+    """成果等级表（管理员可维护）"""
+    id = db.Column(db.Integer, primary_key=True)
+    level_name = db.Column(db.String(50), unique=True, nullable=False, comment='等级名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AchievementLevel {self.level_name}>'
+
+
+class AwardRank(db.Model):
+    """获奖等级表（管理员可维护，多处共用）"""
+    id = db.Column(db.Integer, primary_key=True)
+    rank_name = db.Column(db.String(50), unique=True, nullable=False, comment='等级名称')
+    sort_order = db.Column(db.Integer, default=0, comment='排序顺序')
+    is_active = db.Column(db.Boolean, default=True, comment='是否启用')
+    create_time = db.Column(db.DateTime, default=datetime.utcnow)
+    update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<AwardRank {self.rank_name}>'
 
 
 class TeachingCompetitionAward(db.Model):
     """教学竞赛获奖表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
     title = db.Column(db.String(500), nullable=False)  # 竞赛名称
+    award_year = db.Column(db.String(50))  # 获奖年度
+    competition_level_id = db.Column(db.Integer, db.ForeignKey('achievement_level.id'))  # 竞赛等级 id
+    award_rank_id = db.Column(db.Integer, db.ForeignKey('award_rank.id'))  # 获奖等级 id
+    winners = db.Column(db.Text)  # 获奖人（多个用分号分隔）
+    winner_unit = db.Column(db.String(500))  # 获奖人所在单位
     competition_name = db.Column(db.String(200))  # 竞赛主办方
-    award_level = db.Column(db.String(100))  # 获奖等级
-    award_rank = db.Column(db.String(50))  # 一等奖/二等奖/三等奖
     award_date = db.Column(db.Date)  # 获奖日期
+    certificate_number = db.Column(db.String(100))  # 证书编号
     attachment = db.Column(db.String(256))  # 附件路径
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，参赛教师）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='teaching_competition_awards')
+    user = db.relationship('User', backref='teaching_competition_awards_owned', foreign_keys=[user_id])
+    competition_level = db.relationship('AchievementLevel', backref='teaching_competition_awards_competition_level', foreign_keys=[competition_level_id])
+    award_rank = db.relationship('AwardRank', backref='teaching_competition_awards_award_rank', foreign_keys=[award_rank_id])
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(TeachingCompetitionAward.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='teaching_competition_award')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
 
 
 class StudentGuidanceAward(db.Model):
     """指导学生获奖表"""
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, comment='录入用户 ID')
+    award_year = db.Column(db.String(50))  # 获奖年度
     title = db.Column(db.String(500), nullable=False)  # 获奖名称
     competition_name = db.Column(db.String(200))  # 竞赛名称
-    student_name = db.Column(db.String(200))  # 获奖学生姓名
-    award_level = db.Column(db.String(100))  # 获奖等级
-    award_rank = db.Column(db.String(50))  # 一等奖/二等奖/三等奖
+    competition_level_id = db.Column(db.Integer, db.ForeignKey('achievement_level.id'))  # 竞赛等级 id
+    award_rank_id = db.Column(db.Integer, db.ForeignKey('award_rank.id'))  # 获奖等级 id
+    student_name = db.Column(db.String(200))  # 获奖学生
+    project_name = db.Column(db.String(500))  # 获奖项目名称
+    teacher_name = db.Column(db.String(200))  # 指导教师
+    student_unit = db.Column(db.String(500))  # 获奖学生所在单位
+    organizer = db.Column(db.String(500))  # 竞赛主办方
+    certificate_number = db.Column(db.String(100))  # 证书编号
     award_date = db.Column(db.Date)  # 获奖日期
     attachment = db.Column(db.String(256))  # 附件路径
+    related_personnel_ids = db.Column(db.Text, default='', comment='关联人员 ID（逗号分隔，关联 user 表的 id，指导教师）')
     create_time = db.Column(db.DateTime, default=datetime.utcnow)
     update_time = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队ID（逗号分隔）')
+    public_team_ids = db.Column(db.Text, default='', comment='公开给的团队 ID（逗号分隔）')
 
-    user = db.relationship('User', backref='student_guidance_awards')
-
+    user = db.relationship('User', backref='student_guidance_awards_owned', foreign_keys=[user_id])
+    competition_level = db.relationship('AchievementLevel', backref='student_guidance_awards_competition_level', foreign_keys=[competition_level_id])
+    award_rank = db.relationship('AwardRank', backref='student_guidance_awards_award_rank', foreign_keys=[award_rank_id])
+    contributors = db.relationship('AchievementContributor',
+                                   primaryjoin="and_(StudentGuidanceAward.id==AchievementContributor.achievement_id, AchievementContributor.achievement_type=='student_guidance_award')",
+                                   foreign_keys=[AchievementContributor.achievement_id],
+                                   viewonly=True,
+                                   overlaps='user')
 
 class SystemConfig(db.Model):
     """系统全局配置表（仅管理员可维护）"""
@@ -457,17 +757,15 @@ def generate_nav_menu(user):
         '<li><a href="/">首页</a></li>'
     ]
 
-    # 仅普通教师显示数据统计仪表盘，团队负责人不显示
-    # 核心修改：管理员也不显示OCR和语音功能
+
     if user.role == 'teacher':
         base_menu.append('<li><a href="/user/settings">个人账户设置</a></li>')
         base_menu.append('<li><a href="/stats/dashboard">📊 数据统计仪表盘</a></li>')
         base_menu.append('<li><a href="/achievement/ocr_import">📷 OCR智能导入</a></li>')
         base_menu.append('<li><a href="/achievement/voice_export">🎙️ 语音导出</a></li>')
-    # 管理员和团队负责人都不显示这三个功能
+
     elif user.role == 'team_leader':
         base_menu.append('<li><a href="/user/settings">个人账户设置</a></li>')
-        base_menu.append('<li><a href="/stats/dashboard">📊 数据统计仪表盘</a></li>')
         base_menu.append('<li><a href="/team/voice_export">🎙️ 团队语音导出</a></li>')
 
     # 成果管理菜单（仅普通教师可见）
@@ -486,7 +784,7 @@ def generate_nav_menu(user):
         '    <li><a href="/achievement/monograph">专著</a></li>',
         '  </ul>',
         '</li>',
-        '<li><a href="/achievement/teaching_project">🔬 教研教改项目</a></li>',
+        '<li><a href="/achievement/teaching_project">🔬 教研教改和课程建设项目</a></li>',
         '<li class="menu-group">',
         '  <span onclick="toggleSubmenu(this)">💡 专利与软著</span>',  # 添加点击事件
         '  <ul class="submenu">',
@@ -507,7 +805,15 @@ def generate_nav_menu(user):
     # 管理员专属菜单（核心修改：移除子菜单，直接显示用户/团队管理）
     admin_menu = [
         '<li><a href="/admin/user_manage">👥 用户管理</a></li>',
-        '<li><a href="/admin/team_manage">🏢 团队管理</a></li>'
+        '<li><a href="/admin/team_manage">🏢 团队管理</a></li>',
+        '<li class="menu-group">',
+        '  <span onclick="toggleSubmenu(this)">⚙️ 字典管理</span>',
+        '  <ul class="submenu">',
+        '    <li><a href="/admin/dict_manage/achievement_type">教学成果奖类型</a></li>',
+        '    <li><a href="/admin/dict_manage/achievement_level">成果等级</a></li>',
+        '    <li><a href="/admin/dict_manage/award_rank">获奖等级</a></li>',
+        '  </ul>',
+        '</li>'
     ]
 
     # 团队负责人专属菜单（仅保留带自子菜单的团队管理）
@@ -772,18 +1078,56 @@ def handle_file_upload(file, sub_folder):
 
 
 def get_team_user_ids(current_user):
-    """获取团队内所有用户ID（团队负责人用）"""
+    """获取团队内所有用户 ID（团队负责人用）"""
     if current_user.role != 'team_leader':
         return [current_user.id]
 
-    # 查询当前用户管理的团队
     teams = Team.query.filter_by(leader_id=current_user.id).all()
     team_ids = [t.id for t in teams]
 
-    # 查询团队内所有成员ID
     user_teams = UserTeam.query.filter(UserTeam.team_id.in_(team_ids)).all()
     team_user_ids = [ut.user_id for ut in user_teams] + [current_user.id]
     return team_user_ids
+
+
+def auto_link_contributors(achievement, achievement_type, authors_str, creator_user_id):
+    """自动关联成果与系统用户作者"""
+    if not authors_str:
+        return
+
+    # 修复：同时支持逗号、分号、顿号等多种分隔符
+    import re
+    author_names = [name.strip() for name in re.split(r'[;,;,,]', authors_str) if name.strip()]
+    related_user_ids = set()
+
+    for author_name in author_names:
+        users = User.query.filter(
+            (User.username == author_name) |
+            (User.employee_id == author_name) |
+            (User.email.like(f'%{author_name}%'))
+        ).all()
+
+        for user in users:
+            related_user_ids.add(user.id)
+
+            contributor = AchievementContributor.query.filter_by(
+                achievement_type=achievement_type,
+                achievement_id=achievement.id,
+                user_id=user.id
+            ).first()
+
+            if not contributor:
+                contributor = AchievementContributor(
+                    achievement_type=achievement_type,
+                    achievement_id=achievement.id,
+                    user_id=user.id,
+                    contributor_role='author',
+                    is_creator=(user.id == creator_user_id)
+                )
+                db.session.add(contributor)
+
+    if related_user_ids:
+        achievement.related_personnel_ids = ','.join(map(str, related_user_ids))
 
 
 def render_achievement_list(model, title, fields_config, current_user):
@@ -867,7 +1211,42 @@ def render_achievement_list(model, title, fields_config, current_user):
             field_name = field['name']
             value = getattr(item, field_name, '')
 
-            # 处理NULL值，转为空字符串
+            # 处理外键关联字段（显示名称而非 ID）
+            if field_name == 'achievement_type_id' and value:
+                achievement_type = db.session.get(TeachingAchievementType, value)
+                value = achievement_type.type_name if achievement_type else value
+            elif field_name == 'achievement_level_id' and value:
+                achievement_level = db.session.get(AchievementLevel, value)
+                value = achievement_level.level_name if achievement_level else value
+            elif field_name == 'competition_level_id' and value:
+                competition_level = db.session.get(AchievementLevel, value)
+                value = competition_level.level_name if competition_level else value
+            elif field_name == 'award_rank_id' and value:
+                award_rank = db.session.get(AwardRank, value)
+                value = award_rank.rank_name if award_rank else value
+            elif field_name == 'project_type_id' and value:
+                project_type = db.session.get(ProjectType, value)
+                value = project_type.type_name if project_type else value
+            elif field_name == 'project_level_id' and value:
+                project_level = db.session.get(ProjectLevel, value)
+                value = project_level.level_name if project_level else value
+            elif field_name == 'project_category_id' and value:
+                project_category = db.session.get(ProjectCategory, value)
+                value = project_category.category_name if project_category else value
+            elif field_name == 'project_status_id' and value:
+                project_status = db.session.get(ProjectStatus, value)
+                value = project_status.status_name if project_status else value
+            elif field_name == 'patent_type_id' and value:
+                patent_type = db.session.get(PatentType, value)
+                value = patent_type.type_name if patent_type else value
+            elif field_name == 'patent_status_id' and value:
+                patent_status = db.session.get(PatentStatus, value)
+                value = patent_status.status_name if patent_status else value
+            elif field_name == 'textbook_level_id' and value:
+                textbook_level = db.session.get(TextbookLevel, value)
+                value = textbook_level.level_name if textbook_level else value
+
+            # 处理 NULL 值，转为空字符串
             if value is None:
                 value = ''
             # 特殊处理日期字段
@@ -914,6 +1293,7 @@ def render_achievement_list(model, title, fields_config, current_user):
     content = table_html + pagination_html
     return render_base_layout(title, content, current_user)
 
+
 def render_achievement_form(model, title, fields_config, item_id=None):
     current_user = get_current_user()
     if not current_user or current_user.role == 'admin':
@@ -934,34 +1314,123 @@ def render_achievement_form(model, title, fields_config, item_id=None):
         field_label = field['label']
         field_type = field.get('type', 'text')
         required = 'required' if field.get('required', False) else ''
-        current_value = getattr(item, field_name, None) if item else None  # 初始值设为None
+        current_value = getattr(item, field_name, None) if item else None  # 初始值设为 None
 
-        # 核心修改：处理NULL值
+        # 核心修改：处理 NULL 值
         if current_value is None:
             current_value = ''
         # 日期字段处理（核心优化）
         elif field_type == 'date':
-            current_value = current_value.strftime('%Y-%m-%d') if current_value else ''  # 空值显示为空字符串，但提交时转为None
+            current_value = current_value.strftime('%Y-%m-%d') if current_value else ''  # 空值显示为空字符串，但提交时转为 None
 
-        # 修复Select下拉框渲染逻辑（重点）
+        # 修复 Select 下拉框渲染逻辑（重点）
         if field_type == 'select':
+            # 特殊处理：教材级别（从 TextbookLevel 表读取）
+            if field_name == 'textbook_level_id':
+                levels = TextbookLevel.query.filter_by(is_active=True).order_by(TextbookLevel.sort_order).all()
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" {required}>'
+                form_html += '<option value="">请选择</option>'
+                for level in levels:
+                    selected = 'selected' if str(level.id) == str(current_value) else ''
+                    form_html += f'<option value="{level.id}" {selected}>{level.level_name}</option>'
+                form_html += '</select></div>'
+                continue
+
+            # 特殊处理：竞赛等级（从 AchievementLevel 表读取）
+            if field_name == 'competition_level_id':
+                levels = AchievementLevel.query.filter_by(is_active=True).order_by(AchievementLevel.sort_order).all()
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" {required}>'
+                form_html += '<option value="">请选择</option>'
+                for level in levels:
+                    selected = 'selected' if str(level.id) == str(current_value) else ''
+                    form_html += f'<option value="{level.id}" {selected}>{level.level_name}</option>'
+                form_html += '</select></div>'
+                continue
+
+            # 特殊处理：获奖等级（从 AwardRank 表读取）
+            if field_name == 'award_rank_id':
+                ranks = AwardRank.query.filter_by(is_active=True).order_by(AwardRank.sort_order).all()
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" {required}>'
+                form_html += '<option value="">请选择</option>'
+                for rank in ranks:
+                    selected = 'selected' if str(rank.id) == str(current_value) else ''
+                    form_html += f'<option value="{rank.id}" {selected}>{rank.rank_name}</option>'
+                form_html += '</select></div>'
+                continue
+
+            # 特殊处理：专利类型（从 PatentType 表读取，选项为元组格式）
+            if field_name == 'patent_type_id':
+                patent_types = PatentType.query.order_by(PatentType.sort_order).all()
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" {required}>'
+                form_html += '<option value="">请选择</option>'
+                for pt in patent_types:
+                    selected = 'selected' if str(pt.id) == str(current_value) else ''
+                    form_html += f'<option value="{pt.id}" {selected}>{pt.type_name}</option>'
+                form_html += '</select></div>'
+                continue
+
+            # 特殊处理：专利状态（从 PatentStatus 表读取，选项为元组格式）
+            if field_name == 'patent_status_id':
+                patent_statuses = PatentStatus.query.order_by(PatentStatus.sort_order).all()
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" {required}>'
+                form_html += '<option value="">请选择</option>'
+                for ps in patent_statuses:
+                    selected = 'selected' if str(ps.id) == str(current_value) else ''
+                    form_html += f'<option value="{ps.id}" {selected}>{ps.status_name}</option>'
+                form_html += '</select></div>'
+                continue
+
             options = field.get('options', [])
             form_html += f'<div class="form-group">'
             form_html += f'<label>{field_label} {"*" if required else ""}</label>'
             form_html += f'<select name="{field_name}" {required}>'
             # 先添加默认空选项
             form_html += '<option value="">请选择</option>'
-            # 遍历所有选项并正确设置selected状态
+            # 遍历所有选项并正确设置 selected 状态
             for opt in options:
-                # 修复：判断当前值是否匹配选项（兼容空值/None）
-                selected = 'selected' if str(current_value) == str(opt) else ''
-                form_html += f'<option value="{opt}" {selected}>{opt}</option>'
+                # 兼容元组格式 (id, name) 和简单字符串格式
+                if isinstance(opt, tuple) and len(opt) == 2:
+                    opt_id, opt_name = opt
+                    selected = 'selected' if str(current_value) == str(opt_id) else ''
+                    form_html += f'<option value="{opt_id}" {selected}>{opt_name}</option>'
+                else:
+                    # 简单字符串格式
+                    selected = 'selected' if str(current_value) == str(opt) else ''
+                    form_html += f'<option value="{opt}" {selected}>{opt}</option>'
             form_html += '</select></div>'
             continue
 
 
         elif field_type == 'select_multiple':
-            # 获取所有可选团队（当前用户可访问的团队）
+            # 特殊处理：收录类型多选框（从 InclusionType 表读取）
+            if field_name == 'inclusion_type_ids':
+                inclusion_types = InclusionType.query.filter_by(is_active=True).order_by(InclusionType.sort_order).all()
+                selected_ids = []
+                if current_value and current_value.strip():
+                    selected_ids = [id_str.strip() for id_str in current_value.split(',') if id_str.strip()]
+
+                form_html += f'<div class="form-group">'
+                form_html += f'<label>{field_label} {"*" if required else ""}</label>'
+                form_html += f'<select name="{field_name}" multiple size="10" {required}>'
+                form_html += '<option value="" style="display:none;"></option>'
+                for inc_type in inclusion_types:
+                    selected = 'selected' if str(inc_type.id) in selected_ids else ''
+                    form_html += f'<option value="{inc_type.id}" {selected}>{inc_type.type_name} ({inc_type.type_code})</option>'
+                form_html += '</select>'
+                form_html += '<p style="margin-top:5px; color:#666;">提示：按住 Ctrl 键可多选/取消选择</p></div>'
+                continue
+
+            # 普通多选框（团队等）
             current_user = get_current_user()
             teams = Team.query.all()  # 可根据权限过滤（如仅显示用户加入/管理的团队）
             selected_ids = []
@@ -975,7 +1444,7 @@ def render_achievement_form(model, title, fields_config, item_id=None):
                 selected = 'selected' if str(team.id) in selected_ids else ''
                 form_html += f'<option value="{team.id}" {selected}>{team.name}</option>'
             form_html += '</select>'
-            form_html += '<p style="margin-top:5px; color:#666;">提示：按住Ctrl键可多选/取消选择</p></div>'
+            form_html += '<p style="margin-top:5px; color:#666;">提示：按住 Ctrl 键可多选/取消选择</p></div>'
             # 核心添加：跳过后续普通输入框渲染，避免重复
             continue
 
@@ -1025,7 +1494,6 @@ def handle_achievement_submit(model, fields_config):
         item.user_id = current_user.id
         item.create_time = datetime.now()
 
-    # 处理普通字段（重点修复日期字段空值）
     for field in fields_config:
         field_name = field['name']
         field_type = field.get('type', 'text')
@@ -1034,10 +1502,74 @@ def handle_achievement_submit(model, fields_config):
 
         value = request.form.get(field_name, '').strip()
 
-        # 1. 整数字段处理
+        # 处理外键字段（select 类型且字段名以_id 结尾）- 只保存 ID，不保存对象
+        if field_type == 'select' and field_name.endswith('_id'):
+            if value == '' or value is None:
+                value = None
+            else:
+                try:
+                    value = int(value)  # 直接转为整数保存
+                    # 验证外键是否存在（可选）
+                    if field_name == 'achievement_type_id':
+                        related_obj = db.session.get(TeachingAchievementType, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'achievement_level_id':
+                        related_obj = db.session.get(AchievementLevel, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'competition_level_id':
+                        related_obj = db.session.get(AchievementLevel, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'award_rank_id':
+                        related_obj = db.session.get(AwardRank, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'project_type_id':
+                        related_obj = db.session.get(ProjectType, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'project_level_id':
+                        related_obj = db.session.get(ProjectLevel, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'project_category_id':
+                        related_obj = db.session.get(ProjectCategory, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'project_status_id':
+                        related_obj = db.session.get(ProjectStatus, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'patent_type_id':
+                        related_obj = db.session.get(PatentType, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'patent_status_id':
+                        related_obj = db.session.get(PatentStatus, value)
+                        if not related_obj:
+                            value = None
+                    elif field_name == 'textbook_level_id':
+                        related_obj = db.session.get(TextbookLevel, value)
+                        if not related_obj:
+                            value = None
+                except Exception:
+                    value = None
+
+        if field_type == 'number':
+            if value == '':
+                value = None
+            else:
+                try:
+                    value = float(value)
+                except ValueError:
+                    flash(f'{field["label"]}必须是数字！', 'danger')
+                    return redirect(request.referrer)
+
         if field_type == 'integer':
             if value == '':
-                value = None  # 空值设为None，而非''
+                value = None
             else:
                 try:
                     value = int(value)
@@ -1047,30 +1579,34 @@ def handle_achievement_submit(model, fields_config):
 
 
         elif field_type == 'select_multiple':
-            # 获取多选的团队ID列表（request.form.getlist返回列表）
             selected_ids = request.form.getlist(field_name)
             selected_ids = [id_str.strip() for id_str in selected_ids if id_str.strip() and id_str != '']
-            # 拼接为逗号分隔的字符串存储
             value = ','.join(selected_ids) if selected_ids else ''
 
-        # 2. 日期字段处理（核心修复）
+            if model == JournalPaper and field_name == 'inclusion_type_ids':
+                inclusion_names = []
+                for inc_id in selected_ids:
+                    inc_type = InclusionType.query.get(int(inc_id))
+                    if inc_type:
+                        inclusion_names.append(inc_type.type_name)
+                item.inclusion_status = ','.join(inclusion_names)
+
         elif field_type == 'date':
             if value == '':
-                value = None  # 空值设为None，而非''
+                value = None
             else:
                 try:
                     value = datetime.strptime(value, '%Y-%m-%d').date()
                 except ValueError:
-                    flash(f'{field["label"]}格式错误（需为YYYY-MM-DD）！', 'danger')
+                    flash(f'{field["label"]}格式错误（需为 YYYY-MM-DD）！', 'danger')
                     return redirect(request.referrer)
 
-        # 3. 普通文本字段
         elif value == '':
-            value = None  # 统一将空字符串转为None，适配SQLite
+            value = None
 
         setattr(item, field_name, value)
 
-    # 处理文件上传
+
     for field in fields_config:
         if field.get('type') == 'file':
             file = request.files.get(field['name'])
@@ -1087,7 +1623,41 @@ def handle_achievement_submit(model, fields_config):
     try:
         if not item_id:
             db.session.add(item)
+        db.session.flush()
+
+        if not item_id:
+            achievement_type_map = {
+                'journal_paper': JournalPaper,
+                'conference_paper': ConferencePaper,
+                'textbook': Textbook,
+                'monograph': Monograph,
+                'teaching_project': TeachingProject,
+                'patent': Patent,
+                'software_copyright': SoftwareCopyright,
+                'teaching_achievement_award': TeachingAchievementAward,
+                'teaching_competition_award': TeachingCompetitionAward,
+                'student_guidance_award': StudentGuidanceAward
+            }
+
+            for ach_type, ach_model in achievement_type_map.items():
+                if model == ach_model:
+                    authors_field = 'authors' if hasattr(item, 'authors') else 'chief_editor'
+                    authors_str = getattr(item, authors_field, '')
+                    if authors_str:
+                        auto_link_contributors(item, ach_type, authors_str, current_user.id)
+                    break
+
         db.session.commit()
+
+        if model == JournalPaper:
+            inclusion_type_ids = request.form.getlist('inclusion_type_ids')
+            JournalPaperInclusionRelation.query.filter_by(paper_id=item.id).delete()
+            for inc_id in inclusion_type_ids:
+                if inc_id.strip():
+                    relation = JournalPaperInclusionRelation(paper_id=item.id, inclusion_type_id=int(inc_id.strip()))
+                    db.session.add(relation)
+            db.session.commit()
+
         flash(f'{"修改" if item_id else "新增"}成功！', 'success')
         return redirect(url_for(request.endpoint, action='list'))
     except Exception as e:
@@ -1234,7 +1804,41 @@ def export_achievement_excel(model, fields_config, current_user, start_date=None
             field_name = field['name']
             value = getattr(item, field_name, '')
 
-            # 核心修改：处理NULL值
+            # 处理外键关联字段（显示名称而非 ID）
+            if field_name == 'achievement_type_id' and value:
+                achievement_type = db.session.get(TeachingAchievementType, value)
+                value = achievement_type.type_name if achievement_type else ''
+            elif field_name == 'achievement_level_id' and value:
+                achievement_level = db.session.get(AchievementLevel, value)
+                value = achievement_level.level_name if achievement_level else ''
+            elif field_name == 'competition_level_id' and value:
+                competition_level = db.session.get(AchievementLevel, value)
+                value = competition_level.level_name if competition_level else ''
+            elif field_name == 'award_rank_id' and value:
+                award_rank = db.session.get(AwardRank, value)
+                value = award_rank.rank_name if award_rank else ''
+            elif field_name == 'project_type_id' and value:
+                project_type = db.session.get(ProjectType, value)
+                value = project_type.type_name if project_type else ''
+            elif field_name == 'project_level_id' and value:
+                project_level = db.session.get(ProjectLevel, value)
+                value = project_level.level_name if project_level else ''
+            elif field_name == 'project_category_id' and value:
+                project_category = db.session.get(ProjectCategory, value)
+                value = project_category.category_name if project_category else ''
+            elif field_name == 'project_status_id' and value:
+                project_status = db.session.get(ProjectStatus, value)
+                value = project_status.status_name if project_status else ''
+            elif field_name == 'patent_type_id' and value:
+                patent_type = db.session.get(PatentType, value)
+                value = patent_type.type_name if patent_type else ''
+            elif field_name == 'patent_status_id' and value:
+                patent_status = db.session.get(PatentStatus, value)
+                value = patent_status.status_name if patent_status else ''
+            elif field_name == 'textbook_level_id' and value:
+                textbook_level = db.session.get(TextbookLevel, value)
+                value = textbook_level.level_name if textbook_level else ''
+
             if value is None:
                 value = ''
             elif isinstance(value, (date, datetime)):
@@ -1362,7 +1966,7 @@ def ai_analyze_citation(citation_text, api_key):
         print(f"AI分析会议论文失败：{e}")
         return {'会议地点': '', '起止页码': ''}
 
-def crawl_cnki_journal(keyword, max_papers=3, driver_path=r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe'):
+def crawl_cnki_journal(keyword, max_papers=3, driver_path=r'C:\Users\mtlxzmd\OneDrive\桌面\新建文件夹\毕设\msedgedriver.exe'):
     """爬取知网期刊论文"""
     # 浏览器配置
     options = webdriver.EdgeOptions()
@@ -1480,7 +2084,7 @@ def crawl_cnki_journal(keyword, max_papers=3, driver_path=r'C:\Program Files (x8
         print(f"爬取知网期刊论文失败：{e}")
         return []
 
-def crawl_cnki_conference(keyword, max_papers=3, driver_path=r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe'):
+def crawl_cnki_conference(keyword, max_papers=3, driver_path=r'C:\Users\mtlxzmd\OneDrive\桌面\新建文件夹\毕设\msedgedriver.exe'):
     """爬取知网会议论文"""
     # 浏览器配置
     options = webdriver.EdgeOptions()
@@ -1659,19 +2263,30 @@ def get_baidu_token(current_user):
     baidu_secret_key = api_config.get('baidu', {}).get('secret_key', '')
 
     if not baidu_api_key or not baidu_secret_key:
-        return None, "未配置百度API Key/Secret Key"
+        return None, "未配置百度API Key/Secret Key！请先前往个人设置 > 大模型API配置 中配置百度 OCR API。"
 
     url = f"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={baidu_api_key}&client_secret={baidu_secret_key}"
     try:
         response = requests.post(url, verify=False, timeout=10)
+        response.raise_for_status()  # 检查 HTTP 状态码
         token_data = response.json()
+
+        # 检查是否成功获取 token
+        if "error" in token_data:
+            return None, f"百度API 认证失败：{token_data.get('error_description', '未知错误')}"
+
         return token_data.get("access_token"), None
+    except requests.exceptions.Timeout:
+        return None, "获取百度 Token 超时，请检查网络连接"
+    except requests.exceptions.ConnectionError:
+        return None, "无法连接到百度API 服务器，请检查网络"
     except Exception as e:
-        return None, f"获取百度Token失败：{str(e)}"
+        logger.error(f"获取百度 Token 异常：{str(e)}")
+        return None, f"获取百度 Token 失败：{str(e)}"
 
 
 def baidu_ocr_recognize(image_path, current_user):
-    """百度OCR识别图片文字"""
+    """百度 OCR识别图片文字"""
     token, err = get_baidu_token(current_user)
     if err:
         return "", err
@@ -1680,6 +2295,8 @@ def baidu_ocr_recognize(image_path, current_user):
         with open(image_path, 'rb') as f:
             image_data = f.read()
         image_base64 = base64.b64encode(image_data).decode('utf-8')
+    except FileNotFoundError:
+        return "", f"图片文件不存在：{image_path}"
     except Exception as e:
         return "", f"读取图片失败：{str(e)}"
 
@@ -1692,59 +2309,104 @@ def baidu_ocr_recognize(image_path, current_user):
     }
 
     try:
-        response = requests.post(ocr_url, headers=headers, data=params, timeout=10)
+        response = requests.post(ocr_url, headers=headers, data=params, timeout=30)
+        response.raise_for_status()  # 检查 HTTP 状态码
         result = response.json()
+
+        # 检查百度API 返回的错误
         if "error_code" in result:
-            return "", f"百度OCR调用失败：{result['error_msg']}"
+            error_code = result.get('error_code', 'unknown')
+            error_msg = result.get('error_msg', '未知错误')
+
+            # 常见错误码解释
+            error_explanations = {
+                '17': 'QPS 超限，请稍后再试',
+                '18': '总请求次数超限',
+                '19': '图片大小超限',
+                '100': 'Token 无效或过期',
+                '110': 'Token 已过期',
+            }
+
+            explanation = error_explanations.get(str(error_code), '')
+            full_error = f"百度 OCR 调用失败 [错误码{error_code}]：{error_msg}"
+            if explanation:
+                full_error += f"（{explanation}）"
+
+            logger.error(full_error)
+            return "", full_error
+
+        # 正常返回 OCR 结果
+        if "words_result" not in result:
+            logger.error(f"百度 OCR 返回数据格式异常：{result}")
+            return "", "百度 OCR 返回数据格式异常"
+
         ocr_text = "\n".join([item["words"] for item in result.get("words_result", [])])
         return ocr_text.strip(), None
+
+    except requests.exceptions.Timeout:
+        return "", "OCR识别超时，请检查网络连接或重试"
+    except requests.exceptions.ConnectionError:
+        return "", "无法连接到 OCR 服务器，请检查网络"
     except Exception as e:
-        return "", f"百度OCR请求失败：{str(e)}"
+        logger.error(f"OCR识别异常：{str(e)}")
+        return "", f"OCR识别失败：{str(e)}"
 
 
 def extract_achievement_info(ocr_text):
-    """解析OCR文本，提取成果信息（优化匹配规则）"""
+    """解析 OCR 文本，提取成果信息（仅识别教研教改和课程建设项目）"""
     if not ocr_text.strip():
         return {
-            'type_name': '其他',
+            'type_name': '识别失败',
             'title': '',
             'extra_fields': {},
             'raw_text': ocr_text,
             'confidence': 0.0
         }
 
-    # 规则匹配成果类型（优化关键词和正则，降低匹配门槛）
+    # 规则匹配成果类型（仅教研教改和课程建设项目）
     clean_text = unicodedata.normalize('NFKC', ocr_text)
     clean_text = re.sub(r'\s+', ' ', clean_text)
     lines = [line.strip() for line in ocr_text.split('\n') if line.strip()]
     title = lines[0] if lines else ''
 
-    # 匹配成果类型（优化：优先关键词匹配，降低正则门槛）
+    if '教学改革' in clean_text or '教改' in clean_text:
+        return {
+            'type_name': '教研教改和课程建设项目',
+            'title': title,
+            'extra_fields': {},
+            'raw_text': ocr_text,
+            'confidence': 0.95
+        }
+
+    # 匹配关键词
     matched_type = None
     confidence = 0.0
-    # 重新排序规则，优先匹配更常见的类型
-    sorted_rules = sorted(achievement_rules.items(), key=lambda x: (x[1]['priority'], len(x[1]['keywords'])), reverse=True)
 
-    for type_name, rule in sorted_rules:
-        # 关键词匹配（只要包含任意一个关键词即匹配）
-        keyword_matched = [kw for kw in rule['keywords'] if kw in clean_text]
-        if keyword_matched:
-            matched_type = type_name
-            confidence = min(0.7 + len(keyword_matched) * 0.05, 0.95)
-            break
-        # 正则匹配（兜底）
-        if re.search(rule['pattern'], clean_text, re.IGNORECASE | re.MULTILINE):
-            matched_type = type_name
-            confidence = 0.9
-            break
+    rule = achievement_rules['教研教改和课程建设项目']
 
-    # 兜底：未匹配到则默认「期刊论文」（确保能创建成果）
+    # 关键词匹配（只要包含任意一个关键词即匹配）
+    keyword_matched = [kw for kw in rule['keywords'] if kw in clean_text]
+    if keyword_matched:
+        matched_type = '教研教改和课程建设项目'
+        confidence = min(0.7 + len(keyword_matched) * 0.05, 0.95)
+
+    # 正则匹配（兜底）
+    if not matched_type and re.search(rule['pattern'], clean_text, re.IGNORECASE | re.MULTILINE):
+        matched_type = '教研教改和课程建设项目'
+        confidence = 0.9
+
+    # 如果未匹配到，返回"识别失败"，由 AI 进一步分析
     if not matched_type:
-        matched_type = '期刊论文'
-        confidence = 0.5
+        return {
+            'type_name': '识别失败',
+            'title': title,
+            'extra_fields': {},
+            'raw_text': ocr_text,
+            'confidence': 0.0
+        }
 
     return {
-        'type_name': matched_type or '其他',
+        'type_name': matched_type,
         'title': title,
         'extra_fields': {},
         'raw_text': ocr_text,
@@ -1940,15 +2602,12 @@ def parse_voice_command(text):
 
 def create_achievement_from_ocr(ocr_result, current_user):
     """
-    根据OCR+AI分析结果创建成果记录（填充全量数据库字段）
+    根据 OCR+AI 分析结果创建成果记录（填充全量数据库字段）
     """
-    # 获取智谱API Key
     zhipu_api_key = get_zhipu_api_key(current_user)
 
-    # 第一步：基础OCR解析
     base_info = extract_achievement_info(ocr_result['raw_text'])
 
-    # 第二步：AI智能分析（如果配置了API Key）
     ai_info = {}
     if zhipu_api_key:
         ai_info = ai_analyze_achievement_text(ocr_result['raw_text'], zhipu_api_key)
@@ -1958,7 +2617,6 @@ def create_achievement_from_ocr(ocr_result, current_user):
         type_name = base_info['type_name']
         title = base_info['title']
 
-    # 成果类型映射
     type_model_mapping = {
         '期刊论文': JournalPaper,
         '会议论文': ConferencePaper,
@@ -1967,10 +2625,10 @@ def create_achievement_from_ocr(ocr_result, current_user):
         '发明专利': Patent,
         '实用新型专利': Patent,
         '软著': SoftwareCopyright,
-        '成果获奖': TeachingAchievementAward,
+        '教学成果获奖': TeachingAchievementAward,
         '教学竞赛获奖': TeachingCompetitionAward,
         '指导学生获奖': StudentGuidanceAward,
-        '其他': JournalPaper
+        '教研教改和课程建设项目': TeachingProject
     }
 
     if type_name not in type_model_mapping:
@@ -1978,22 +2636,18 @@ def create_achievement_from_ocr(ocr_result, current_user):
 
     model = type_model_mapping[type_name]
     try:
-        # 创建成果记录
         achievement = model()
         achievement.user_id = current_user.id
-        achievement.title = title if title else f"OCR识别成果_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        achievement.title = title if title else f"OCR 识别成果_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         achievement.create_time = datetime.now()
         achievement.update_time = datetime.now()
 
-        # ---------------------- 填充全量字段 ----------------------
-        # 1. 期刊论文
         if type_name == '期刊论文':
             achievement.authors = ai_info.get('authors', '')
             achievement.corresponding_authors = ai_info.get('corresponding_authors', '')
             achievement.journal_name = ai_info.get('journal_name', '')
             achievement.inclusion_status = ai_info.get('inclusion_status', '')
 
-            # 数字字段转换
             if ai_info.get('year'):
                 achievement.year = ai_info['year']
             if ai_info.get('publish_year'):
@@ -2007,14 +2661,12 @@ def create_achievement_from_ocr(ocr_result, current_user):
             achievement.page_range = ai_info.get('page_range', '')
             achievement.doi = ai_info.get('doi', '')
 
-            # 日期字段转换
             if ai_info.get('publish_date'):
                 try:
                     achievement.publish_date = datetime.strptime(ai_info['publish_date'], '%Y-%m-%d').date()
                 except:
                     pass
 
-        # 2. 会议论文
         elif type_name == '会议论文':
             achievement.authors = ai_info.get('authors', '')
             achievement.corresponding_authors = ai_info.get('corresponding_authors', '')
@@ -2036,7 +2688,6 @@ def create_achievement_from_ocr(ocr_result, current_user):
                     pass
             achievement.conference_place = ai_info.get('conference_place', '')
 
-        # 3. 教材（完整字段）
         elif type_name == '教材':
             achievement.textbook_series = ai_info.get('textbook_series', '')
             achievement.chief_editor = ai_info.get('chief_editor', '')
@@ -2046,7 +2697,6 @@ def create_achievement_from_ocr(ocr_result, current_user):
             achievement.isbn = ai_info.get('isbn', '')
             achievement.cip_number = ai_info.get('cip_number', '')
 
-            # 数字字段
             if ai_info.get('publication_year'):
                 try:
                     achievement.publication_year = int(ai_info['publication_year'])
@@ -2072,12 +2722,33 @@ def create_achievement_from_ocr(ocr_result, current_user):
                 except:
                     pass
 
-        # 4. 专著
         elif type_name == '专著':
-            achievement.authors = ai_info.get('authors', '')
-            achievement.isbn = ai_info.get('isbn', '')
+            achievement.textbook_series = ai_info.get('textbook_series', '')
+            achievement.chief_editor = ai_info.get('chief_editor', '')
+            achievement.associate_editors = ai_info.get('associate_editors', '')
+            achievement.editorial_board = ai_info.get('editorial_board', '')
             achievement.publisher = ai_info.get('publisher', '')
+            achievement.isbn = ai_info.get('isbn', '')
+            achievement.cip_number = ai_info.get('cip_number', '')
             achievement.author_role = ai_info.get('author_role', '')
+
+            if ai_info.get('publication_year'):
+                try:
+                    achievement.publication_year = int(ai_info['publication_year'])
+                except:
+                    pass
+            if ai_info.get('publication_month'):
+                try:
+                    achievement.publication_month = int(ai_info['publication_month'])
+                except:
+                    pass
+
+            achievement.edition = ai_info.get('edition', '')
+            achievement.word_count = ai_info.get('word_count', '')
+            achievement.price = ai_info.get('price', '')
+            achievement.monograph_type = ai_info.get('monograph_type', '')
+            achievement.applicable_majors = ai_info.get('applicable_majors', '')
+            achievement.remarks = ai_info.get('remarks', '')
 
             if ai_info.get('publish_date'):
                 try:
@@ -2085,26 +2756,66 @@ def create_achievement_from_ocr(ocr_result, current_user):
                 except:
                     pass
 
-        # 5. 专利（发明/实用新型）
-        elif type_name in ['发明专利', '实用新型专利']:
-            achievement.patent_type = type_name
-            achievement.patent_number = ai_info.get('patent_number', '')
-            achievement.status = ai_info.get('status', '')
 
+        elif type_name in ['发明专利', '实用新型专利', '外观设计专利']:
+            # 根据专利类型名称获取类型 ID
+            patent_type = PatentType.query.filter_by(type_name=type_name).first()
+            if patent_type:
+                achievement.patent_type_id = patent_type.id
+
+            # 填充新字段
+            achievement.patentee = ai_info.get('patentee', '')
+            achievement.address = ai_info.get('address', '')
+            achievement.inventors = ai_info.get('inventors', '')
+            achievement.grant_announcement_number = ai_info.get('grant_announcement_number', '')
+            achievement.applicant_at_apply_date = ai_info.get('applicant_at_apply_date', '')
+            achievement.inventor_at_apply_date = ai_info.get('inventor_at_apply_date', '')
+
+            # 基础字段
+            achievement.patent_number = ai_info.get('patent_number', '')
+
+            # 根据状态名称获取状态 ID
+            status_name = ai_info.get('status', '')
+            if status_name:
+                patent_status = PatentStatus.query.filter_by(status_name=status_name).first()
+                if patent_status:
+                    achievement.patent_status_id = patent_status.id
+
+            # 处理日期字段
             if ai_info.get('apply_date'):
                 try:
                     achievement.apply_date = datetime.strptime(ai_info['apply_date'], '%Y-%m-%d').date()
                 except:
                     pass
-            if ai_info.get('grant_date'):
+            if ai_info.get('grant_announcement_date'):
                 try:
-                    achievement.grant_date = datetime.strptime(ai_info['grant_date'], '%Y-%m-%d').date()
+                    achievement.grant_announcement_date = datetime.strptime(ai_info['grant_announcement_date'],
+                                                                            '%Y-%m-%d').date()
                 except:
                     pass
 
-        # 6. 软著
         elif type_name == '软著':
+            # 填充新字段
+            achievement.copyright_owner = ai_info.get('copyright_owner', '')
+            achievement.right_acquisition_method = ai_info.get('right_acquisition_method', '')
+            achievement.right_scope = ai_info.get('right_scope', '')
+            achievement.certificate_number = ai_info.get('certificate_number', '')
+            # 基础字段
             achievement.copyright_number = ai_info.get('copyright_number', '')
+
+            # 处理日期字段
+            if ai_info.get('completion_date'):
+                try:
+                    achievement.completion_date = datetime.strptime(ai_info['completion_date'], '%Y-%m-%d').date()
+                except:
+                    pass
+
+            if ai_info.get('first_publication_date'):
+                try:
+                    achievement.first_publication_date = datetime.strptime(ai_info['first_publication_date'],
+                                                                           '%Y-%m-%d').date()
+                except:
+                    pass
 
             if ai_info.get('register_date'):
                 try:
@@ -2112,75 +2823,264 @@ def create_achievement_from_ocr(ocr_result, current_user):
                 except:
                     pass
 
-        # 7. 教研项目（映射到成果获奖兜底）
-        elif type_name == '教研项目':
-            if model == TeachingAchievementAward:
-                achievement.award_level = ai_info.get('project_type', '')
-                achievement.remarks = f"经费：{ai_info.get('funding', '')}；状态：{ai_info.get('status', '')}"
 
-                if ai_info.get('start_date'):
-                    try:
-                        achievement.award_date = datetime.strptime(ai_info['start_date'], '%Y-%m-%d').date()
-                    except:
-                        pass
 
-        # 8. 获奖类
-        elif type_name == '成果获奖':
-            achievement.award_level = ai_info.get('award_level', '')
-            achievement.award_rank = ai_info.get('award_rank', '')
+        elif type_name == '教研教改和课程建设项目':
+            achievement.project_code = ai_info.get('project_code', '')
+            achievement.project_leader = ai_info.get('project_leader', '')
+            achievement.project_members = ai_info.get('project_members', '')
+            achievement.approval_department = ai_info.get('approval_department', '')
+            # 处理项目经费（可以为空）
+            funding_str = ai_info.get('funding', '')
 
-            if ai_info.get('award_date'):
+            if funding_str and funding_str.strip():
                 try:
-                    achievement.award_date = datetime.strptime(ai_info['award_date'], '%Y-%m-%d').date()
+                    # 去除"万"、"元"等单位，转换为纯数字
+                    funding_str = funding_str.replace('万', '0000').replace('元', '').replace(',', '').strip()
+                    achievement.funding = float(funding_str)
                 except:
                     pass
+
+            # 处理立项时间（支持多种格式）
+            if ai_info.get('approval_date'):
+                try:
+                    achievement.approval_date = datetime.strptime(ai_info['approval_date'], '%Y-%m').date()
+                except:
+                    pass
+
+            # 处理开始时间
+            if ai_info.get('start_date'):
+                try:
+                    achievement.start_date = datetime.strptime(ai_info['start_date'], '%Y-%m-%d').date()
+                except:
+                    pass
+
+            # 处理结束时间
+            if ai_info.get('end_date'):
+                try:
+                    achievement.end_date = datetime.strptime(ai_info['end_date'], '%Y-%m-%d').date()
+                except:
+                    pass
+
+            project_type_name = ai_info.get('project_type_name', '')
+            if project_type_name:
+                pt = ProjectType.query.filter_by(type_name=project_type_name).first()
+                if pt:
+                    achievement.project_type_id = pt.id
+
+            project_level_name = ai_info.get('project_level_name', '')
+            if project_level_name:
+                pl = ProjectLevel.query.filter_by(level_name=project_level_name).first()
+                if pl:
+                    achievement.project_level_id = pl.id
+
+            project_category_name = ai_info.get('project_category_name', '')
+            if project_category_name:
+                pc = ProjectCategory.query.filter_by(category_name=project_category_name).first()
+                if pc:
+                    achievement.project_category_id = pc.id
+
+
+
+        elif type_name == '教学成果获奖':
+
+            # 新增字段：主要完成人、成果完成单位、获奖年度、证书编号、颁奖单位
+
+            achievement.main_contributors = ai_info.get('main_contributors', '')
+
+            achievement.completing_units = ai_info.get('completing_units', '')
+
+            achievement.award_year = ai_info.get('award_year')
+
+            achievement.certificate_number = ai_info.get('certificate_number', '')
+
+            achievement.awarding_unit = ai_info.get('awarding_unit', '')
+
+            # 处理外键字段：achievement_type_id
+
+            achievement_type_name = ai_info.get('achievement_type_name', '')
+
+            if achievement_type_name:
+
+                at = TeachingAchievementType.query.filter_by(type_name=achievement_type_name).first()
+
+                if at:
+                    achievement.achievement_type_id = at.id
+
+            # 处理外键字段：achievement_level_id
+
+            achievement_level_name = ai_info.get('achievement_level_name', '')
+
+            if achievement_level_name:
+
+                al = AchievementLevel.query.filter_by(level_name=achievement_level_name).first()
+
+                if al:
+                    achievement.achievement_level_id = al.id
+
+            # 处理外键字段：award_rank_id
+
+            award_rank_name = ai_info.get('award_rank_name', '')
+
+            if award_rank_name:
+
+                ar = AwardRank.query.filter_by(rank_name=award_rank_name).first()
+
+                if ar:
+                    achievement.award_rank_id = ar.id
+
+            # 处理日期
+
+            if ai_info.get('award_date'):
+
+                try:
+
+                    achievement.award_date = datetime.strptime(ai_info['award_date'], '%Y-%m-%d').date()
+
+                except:
+
+                    pass
+
 
         elif type_name == '教学竞赛获奖':
+
+            achievement.award_year = ai_info.get('award_year')
+
+            achievement.winners = ai_info.get('winners', '')
+
+            achievement.winner_unit = ai_info.get('winner_unit', '')
+
             achievement.competition_name = ai_info.get('competition_name', '')
-            achievement.award_level = ai_info.get('award_level', '')
-            achievement.award_rank = ai_info.get('award_rank', '')
+
+            achievement.certificate_number = ai_info.get('certificate_number', '')
+
+            # 处理外键字段：competition_level_id
+
+            competition_level_name = ai_info.get('competition_level_name', '')
+
+            if competition_level_name:
+
+                cl = AchievementLevel.query.filter_by(level_name=competition_level_name).first()
+
+                if cl:
+                    achievement.competition_level_id = cl.id
+
+            # 处理外键字段：award_rank_id
+
+            award_rank_name = ai_info.get('award_rank_name', '')
+
+            if award_rank_name:
+
+                ar = AwardRank.query.filter_by(rank_name=award_rank_name).first()
+
+                if ar:
+                    achievement.award_rank_id = ar.id
 
             if ai_info.get('award_date'):
+
                 try:
+
                     achievement.award_date = datetime.strptime(ai_info['award_date'], '%Y-%m-%d').date()
+
                 except:
+
                     pass
+
 
         elif type_name == '指导学生获奖':
+
+            achievement.award_year = ai_info.get('award_year')
+
             achievement.competition_name = ai_info.get('competition_name', '')
+
             achievement.student_name = ai_info.get('student_name', '')
-            achievement.award_level = ai_info.get('award_level', '')
-            achievement.award_rank = ai_info.get('award_rank', '')
+
+            achievement.project_name = ai_info.get('project_name', '')
+
+            achievement.teacher_name = ai_info.get('teacher_name', '')
+
+            achievement.student_unit = ai_info.get('student_unit', '')
+
+            achievement.organizer = ai_info.get('organizer', '')
+
+            achievement.certificate_number = ai_info.get('certificate_number', '')
+
+            # 处理外键字段：competition_level_id
+
+            competition_level_name = ai_info.get('competition_level_name', '')
+
+            if competition_level_name:
+
+                cl = AchievementLevel.query.filter_by(level_name=competition_level_name).first()
+
+                if cl:
+                    achievement.competition_level_id = cl.id
+
+            # 处理外键字段：award_rank_id
+
+            award_rank_name = ai_info.get('award_rank_name', '')
+
+            if award_rank_name:
+
+                ar = AwardRank.query.filter_by(rank_name=award_rank_name).first()
+
+                if ar:
+                    achievement.award_rank_id = ar.id
 
             if ai_info.get('award_date'):
+
                 try:
+
                     achievement.award_date = datetime.strptime(ai_info['award_date'], '%Y-%m-%d').date()
+
                 except:
+
                     pass
 
-        # 保存到数据库
         db.session.add(achievement)
+        db.session.flush()
+
+        achievement_type_map = {
+            '期刊论文': 'journal_paper',
+            '会议论文': 'conference_paper',
+            '教材': 'textbook',
+            '专著': 'monograph',
+            '发明专利': 'patent',
+            '实用新型专利': 'patent',
+            '软著': 'software_copyright',
+            '教学成果获奖': 'teaching_achievement_award',
+            '教学竞赛获奖': 'teaching_competition_award',
+            '指导学生获奖': 'student_guidance_award',
+            '教研教改和课程建设项目': 'teaching_project'
+        }
+
+        authors_field = 'authors' if hasattr(achievement, 'authors') else 'chief_editor'
+        authors_str = getattr(achievement, authors_field, '')
+        if authors_str and type_name in achievement_type_map:
+            auto_link_contributors(achievement, achievement_type_map[type_name], authors_str, current_user.id)
+
         db.session.commit()
 
         return True, f"成功创建{type_name}：{title}（ID：{achievement.id}），已填充{len([k for k, v in ai_info.items() if v])}个字段", type_name, achievement.id
     except Exception as e:
         db.session.rollback()
-        logger.error(f"创建AI增强版成果失败：{str(e)}")
+        logger.error(f"创建 AI 增强版成果失败：{str(e)}")
         return False, f"创建成果失败：{str(e)}", None, None
 
 
-def ai_analyze_achievement_text(ocr_text, api_key):
+def ai_analyze_achievement_text(ocr_text, api_key, current_user=None):
     """
-    增强版：调用智谱AI分析OCR文本，提取所有成果类型的全量数据库字段
-    :param ocr_text: OCR识别的原始文本
-    :param api_key: 智谱AI API Key
+    增强版：调用智谱 AI 分析 OCR 文本，提取所有成果类型的全量数据库字段
+    :param ocr_text: OCR 识别的原始文本
+    :param api_key: 智谱 AI API Key
+    :param current_user: 当前登录用户（用于筛选教研教改项目）
     :return: 包含全量字段的结构化字典
     """
     if not ocr_text.strip() or not api_key:
         # 返回全量空字段（匹配数据库模型）
         return {
             # 通用字段
-            'type_name': '其他',
+            'type_name': '识别失败',
             'title': '',
             'confidence': 0.0,
             'raw_data': {},
@@ -2222,7 +3122,22 @@ def ai_analyze_achievement_text(ocr_text, api_key):
             'remarks': '',
 
             # 专著专属
-            'author_role': '',
+            'textbook_series': '',
+            'chief_editor': '',
+            'associate_editors': '',
+            'editorial_board': '',
+            'publisher': '',
+            'isbn': '',
+            'cip_number': '',
+            'publication_year': '',
+            'publication_month': '',
+            'publish_date': '',
+            'edition': '',
+            'word_count': '',
+            'price': '',
+            'monograph_type': '',
+            'applicable_majors': '',
+            'remarks': '',
 
             # 专利专属
             'patent_type': '',
@@ -2232,11 +3147,24 @@ def ai_analyze_achievement_text(ocr_text, api_key):
             'status': '',
 
             # 软著专属
+            'copyright_owner': '',
+            'completion_date': '',
+            'first_publication_date': '',
+            'right_acquisition_method': '',
+            'right_scope': '',
             'copyright_number': '',
+            'certificate_number': '',
             'register_date': '',
 
-            # 教研项目专属
+            # 教研教改和课程建设项目专属
+            'project_code': '',
+            'project_leader': '',
+            'project_members': '',
+            'approval_department': '',
+            'approval_date': '',
             'project_type': '',
+            'project_level': '',
+            'project_category': '',
             'funding': '',
             'start_date': '',
             'end_date': '',
@@ -2255,30 +3183,43 @@ def ai_analyze_achievement_text(ocr_text, api_key):
         "Authorization": f"Bearer {api_key}"
     }
 
-    # 增强版Prompt：明确要求提取所有数据库字段
+    user_name = ''
+    if current_user:
+        user_name = current_user.username
+
+    # 增强版 Prompt：明确要求提取所有数据库字段
     prompt = f"""
-【任务】从以下文本中精准提取教学成果的**所有关键信息**，严格按指定格式输出JSON字符串。
+【任务】从以下文本中精准提取教学成果的**所有关键信息**，严格按指定格式输出 JSON 字符串。
 【文本内容】
 {ocr_text}
 
 【核心要求】
 1. 先识别成果类型（必须是以下之一）：
-   期刊论文/会议论文/发明专利/实用新型专利/教材/专著/软著/成果获奖/教学竞赛获奖/指导学生获奖/其他
-2. 根据成果类型，提取对应**所有**字段（无信息则为空字符串）：
+   期刊论文/会议论文/发明专利/实用新型专利/教材/专著/软著/教学成果获奖/教学竞赛获奖/指导学生获奖/教研教改和课程建设项目
+
+2. **重要：如果是教研教改和课程建设项目，且文本中包含多个项目，只提取项目负责人或参与人包含"{user_name}"的项目**
+   - 如果表格中有"主持人"或"项目负责人"列，只提取该列包含"{user_name}"的项目
+   - 如果表格中有"参加人员"列，也检查是否包含"{user_name}"
+   - 如果没有找到"{user_name}"的项目，返回空字段
+
+
+3. 根据成果类型，提取对应**所有**字段（无信息则为空字符串）：
+
+
 
 ### 期刊论文字段
 - title: 论文名称（必填）
 - authors: 作者（多个用逗号分隔）
 - corresponding_authors: 通讯作者（多个用逗号分隔）
 - journal_name: 期刊名称
-- inclusion_status: 收录情况（如SCI/SSCI/EI/CSSCI/北大核心等）
+- inclusion_status: 收录情况（如 SCI/SSCI/EI/CSSCI/北大核心等）
 - year: 发表年（仅数字）
 - volume: 卷（仅数字/字符）
 - issue: 期（仅数字/字符）
-- page_range: 起止页码（如10-20）
-- doi: DOI编号
+- page_range: 起止页码（如 10-20）
+- doi: DOI 编号
 - publish_year: 发表年份（仅数字）
-- publish_date: 发表日期（格式YYYY-MM-DD，无则为空）
+- publish_date: 发表日期（格式 YYYY-MM-DD，无则为空）
 
 ### 会议论文字段
 - title: 论文名称
@@ -2288,7 +3229,7 @@ def ai_analyze_achievement_text(ocr_text, api_key):
 - conference_time: 会议时间（YYYY-MM-DD）
 - conference_place: 会议地点
 - page_range: 起止页码
-- doi: DOI编号
+- doi: DOI 编号
 - publish_year: 发表年份
 
 ### 教材字段
@@ -2298,74 +3239,126 @@ def ai_analyze_achievement_text(ocr_text, api_key):
 - associate_editors: 副主编
 - editorial_board: 编委
 - publisher: 出版社
-- isbn: ISBN号
-- cip_number: CIP核字号
+- isbn: ISBN 号
+- cip_number: CIP 核字号
 - publication_year: 出版年份
 - publication_month: 出版月份（仅数字）
-- edition: 版次（如第1版）
-- word_count: 字数（如318千字）
-- price: 定价（如49.00）
+- edition: 版次（如第 1 版）
+- word_count: 字数（如 318 千字）
+- price: 定价（如 49.00）
 - textbook_level: 教材级别（国家级规划/全国行业规划/协编/自编/其它）
 - textbook_type: 教材类型（纸质/数字）
 - applicable_majors: 适用专业
 - remarks: 备注
 
-### 专著字段
+### 专著字段（重点增强）
 - title: 专著名称
-- authors: 作者
-- isbn: ISBN号
+- textbook_series: 专著系列
+- chief_editor: 主编
+- associate_editors: 副主编
+- editorial_board: 编委
 - publisher: 出版社
-- publish_date: 出版日期（YYYY-MM-DD）
-- author_role: 作者角色（独著/合著/主编）
+- isbn: ISBN 号（13 位或 10 位）
+- cip_number: CIP 核字号（如"2023 第 XXXXX 号"）
+- publication_year: 出版年份（仅数字）
+- publication_month: 出版月份（仅数字）
+- publish_date: 出版日期（格式 YYYY-MM-DD）
+- edition: 版次（如第 1 版、修订版）
+- word_count: 字数（如 318 千字）
+- price: 定价（如 49.00）
+- monograph_type: 专著类型（学术专著/技术专著/科普著作/其它）
+- applicable_majors: 适用专业
+- remarks: 备注
 
 ### 专利字段（发明/实用新型）
 - title: 专利名称
-- patent_type: 专利类型（发明专利/实用新型专利）
-- patent_number: 专利号/申请号（如ZL202412345678.9）
-- apply_date: 申请日期（YYYY-MM-DD）
-- grant_date: 授权日期（YYYY-MM-DD）
-- status: 专利状态（申请中/已授权/失效）
+- patent_type: 专利类型（发明专利/实用新型专利/外观设计专利）
+- patentee: 专利权人
+- address: 地址
+- inventors: 发明人（多人用分号分隔）
+- status: 专利状态（受理/初步审查/公开/实质审查/授权）
+- patent_number: 专利号/申请号（如 ZL202412345678.9）
+- grant_announcement_number: 授权公告号
+- apply_date: 专利申请日（YYYY-MM-DD）
+- grant_announcement_date: 授权公告日（YYYY-MM-DD）
+- applicant_at_apply_date: 申请日时申请人（发明专利特有）
+- inventor_at_apply_date: 申请日时发明人（发明专利特有）
+
 
 ### 软著字段
-- title: 软著名称
-- copyright_number: 登记号
-- register_date: 登记日期（YYYY-MM-DD）
+- title: 软件名称（必填）
+- copyright_owner: 著作权人（多人用分号分隔，如"张三；李四；王五"）
+- completion_date: 开发完成日期（格式 YYYY-MM-DD）
+- first_publication_date: 首次发表日期（格式 YYYY-MM-DD）
+- right_acquisition_method: 权利取得方式（如"原始取得"、"受让取得"、"继承取得"等）
+- right_scope: 权利范围（如"全部权利"、"部分权利"等）
+- copyright_number: 登记号（如"2024SR123456"）
+- certificate_number: 证书号（如"软著登字第 1234567 号"）
+- register_date: 登记日期（格式 YYYY-MM-DD）
 
-### 教研项目字段
-- title: 项目名称
-- project_type: 项目类型（校级/省级/国家级）
-- funding: 经费（如5万元）
-- start_date: 开始时间（YYYY-MM-DD）
-- end_date: 结束时间（YYYY-MM-DD）
-- status: 项目状态（在研/结题/延期）
 
-### 获奖类字段
-#### 教学成果获奖
-- title: 获奖名称
-- award_level: 获奖等级（校级/省级/国家级）
-- award_rank: 获奖等次（一等奖/二等奖/三等奖/优秀奖）
+### 教研教改和课程建设项目字段（重点新增）
+- title: 项目名称（必填，从项目名单表格中提取）
+- project_code: 项目编号（序号或正式编号，如"1"、"2019JG001"等）
+- project_leader: 项目负责人/主持人（从表格"主持人"列提取，文本格式，如"李超"）
+- project_members: 项目参与人（从表格"参加人员"列提取，多人时用顿号分隔，如"刘增明、黄嘉、赵可、杨华文"）
+- approval_department: 项目批准部门（从文件头提取，如"湖南省教育厅"）
+- approval_date: 项目立项时间（从文件落款日期提取，格式 YYYY-MM，如"2019-09"）
+- project_type_name: 项目类型名称（从以下选择：普通本科高校教学改革研究项目、学位与研究生教育改革研究项目、一流本科课程建设项目、课程思政建设项目、其它）
+- project_level_name: 项目级别名称（从以下选择：国家级、省部级、市厅级、校级、院级、其它）
+- project_category_name: 项目类别名称（从以下选择：重点项目、一般项目、线上一流课程、线上线下混合式一流课程、线下一流课程、社会实践一流课程、虚拟仿真实验教学一流课程、其它）
+- funding: 项目经费（数值型，单位元，如 50000）
+- start_date: 项目开始时间（格式 YYYY-MM-DD）
+- end_date: 项目结束时间（格式 YYYY-MM-DD）
+
+### 教学成果获奖字段
+- title: 成果名称（必填）
+- achievement_type_name: 教学成果奖类型（湖南中医药大学教学成果奖/湖南中医药大学研究生教学成果奖/湖南省计算机学会高等教育教学成果奖/其它）
+- achievement_level_name: 成果等级（国家级/省部级/市厅级/校级/院级/其它）
+- award_rank_name: 获奖等级（特等奖/一等奖/二等奖/三等奖/优秀奖/其它）
+- main_contributors: 主要完成人（多人用分号分隔）
+- completing_units: 成果完成单位（多个用分号分隔）
+- award_year: 获奖年度（仅数字）
+- certificate_number: 证书编号
+- awarding_unit: 颁奖单位
 - award_date: 获奖日期（YYYY-MM-DD）
 
-#### 教学竞赛获奖
+### 教学竞赛获奖
+**特征词**：教师团队、教师竞赛、教学竞赛、特发此证、鼓励
 - title: 竞赛名称
+- award_year: 获奖年度（仅数字）
+- competition_level_name: 竞赛等级（国家级/省部级/市厅级/校级/院级/其它）
+- award_rank_name: 获奖等级（特等奖/一等奖/二等奖/三等奖/优秀奖/其它）
+- winners: 获奖人（多人用分号分隔）
+- winner_unit: 获奖人所在单位
 - competition_name: 竞赛主办方
-- award_level: 获奖等级
-- award_rank: 获奖等次
-- award_date: 获奖日期
+- certificate_number: 证书编号
+- award_date: 获奖日期（YYYY-MM-DD）
 
 #### 指导学生获奖
+**特征词**：指导老师、学生获奖、指导教师、获奖学生、学生姓名
 - title: 获奖名称
+- award_year: 获奖年度（仅数字）
 - competition_name: 竞赛名称
-- student_name: 获奖学生姓名
-- award_level: 获奖等级
-- award_rank: 获奖等次
-- award_date: 获奖日期
+- competition_level_name: 竞赛等级（国家级/省部级/市厅级/校级/院级/其它）
+- award_rank_name: 获奖等级（特等奖/一等奖/二等奖/三等奖/优秀奖/其它）
+- student_name: 获奖学生
+- project_name: 获奖项目名称
+- teacher_name: 指导教师
+- student_unit: 获奖学生所在单位
+- organizer: 竞赛主办方
+- certificate_number: 证书编号
+- award_date: 获奖日期（YYYY-MM-DD）
 
 【输出规则】
-1. 仅输出标准JSON字符串，无任何多余文字、注释、反引号
+1. 仅输出标准 JSON 字符串，无任何多余文字、注释、反引号
 2. 所有字段值为字符串类型，无信息则为空字符串
-3. 必须包含confidence字段（0-1，代表识别置信度）
-4. type_name字段必须匹配指定的成果类型列表
+3. 必须包含 confidence 字段（0-1，代表识别置信度）
+4. type_name 字段必须匹配指定的成果类型列表
+5. 对于教研教改项目，重点关注以下特征词：
+   - "教学改革研究"、"教改"、"课程建设"、"一流本科课程"、"课程思政"
+   - "学校名称"、"项目名称"、"主持人"、"参加人员"、"项目类别"
+   - "普通教育"、"湖南省普通高等学校"等
 """
 
     payload = {
@@ -2375,99 +3368,170 @@ def ai_analyze_achievement_text(ocr_text, api_key):
         "stream": False
     }
 
+
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         response.raise_for_status()
         result = response.json()
         ai_content = result['choices'][0]['message']['content'].strip()
 
-        # 清理AI返回格式
-        ai_content = ai_content.replace('```json', '').replace('```', '').strip()
-        ai_data = json.loads(ai_content)
+        # 清理 AI 返回格式
+        ai_content = ai_content.replace('json', '').replace('```', '').strip()
+        ai_data_raw = json.loads(ai_content)
 
-        # 数据清洗：确保所有字段存在且为字符串
+
+        # 检查 AI 返回的数据类型
+        if isinstance(ai_data_raw, list):
+            ai_data = ai_data_raw[0] if len(ai_data_raw) > 0 and isinstance(ai_data_raw[0], dict) else {}
+        elif isinstance(ai_data_raw, dict):
+            ai_data = ai_data_raw
+        else:
+            ai_data = {}
+
+        type_name = ai_data.get('type_name', '')
+        if type_name == '教学竞赛获奖':
+            student_name = ai_data.get('student_name', '')
+            teacher_name = ai_data.get('teacher_name', '')
+            has_student_keyword = '学生' in ocr_text or '指导' in ocr_text
+            if (student_name or teacher_name) and has_student_keyword:
+                type_name = '指导学生获奖'
+                ai_data['type_name'] = type_name
+        elif type_name == '指导学生获奖':
+            student_name = ai_data.get('student_name', '')
+            teacher_name = ai_data.get('teacher_name', '')
+            has_student_keyword = '学生' in ocr_text or '指导' in ocr_text
+            if not student_name and not teacher_name and not has_student_keyword:
+                type_name = '教学竞赛获奖'
+                ai_data['type_name'] = type_name
+
+        # 数据清洗：确保所有字段存在且为字符串（强制转换，避免 None）
         result_data = {
             # 通用字段
-            'type_name': ai_data.get('type_name', '其他'),
-            'title': ai_data.get('title', '').strip(),
-            'confidence': float(ai_data.get('confidence', 0.8)),
+            'type_name': str(ai_data.get('type_name', '其他') or '其他'),
+            'title': str(ai_data.get('title', '') or ''),
+            'confidence': float(ai_data.get('confidence', 0.8) or 0.8),
             'raw_data': ai_data,
 
-            # 期刊论文
-            'authors': ai_data.get('authors', '').strip(),
-            'corresponding_authors': ai_data.get('corresponding_authors', '').strip(),
-            'journal_name': ai_data.get('journal_name', '').strip(),
-            'inclusion_status': ai_data.get('inclusion_status', '').strip(),
-            'year': ai_data.get('year', '').strip(),
-            'volume': ai_data.get('volume', '').strip(),
-            'issue': ai_data.get('issue', '').strip(),
-            'page_range': ai_data.get('page_range', '').strip(),
-            'doi': ai_data.get('doi', '').strip(),
-            'publish_year': ai_data.get('publish_year', '').strip(),
-            'publish_date': ai_data.get('publish_date', '').strip(),
+            # 期刊论文（强制转换为字符串，避免 None）
+            'authors': str(ai_data.get('authors', '') or ''),
+            'corresponding_authors': str(ai_data.get('corresponding_authors', '') or ''),
+            'journal_name': str(ai_data.get('journal_name', '') or ''),
+            'inclusion_status': str(ai_data.get('inclusion_status', '') or ''),
+            'year': str(ai_data.get('year', '') or ''),
+            'volume': str(ai_data.get('volume', '') or ''),
+            'issue': str(ai_data.get('issue', '') or ''),
+            'page_range': str(ai_data.get('page_range', '') or ''),
+            'doi': str(ai_data.get('doi', '') or ''),
+            'publish_year': str(ai_data.get('publish_year', '') or ''),
+            'publish_date': str(ai_data.get('publish_date', '') or ''),
 
             # 会议论文
-            'conference_name': ai_data.get('conference_name', '').strip(),
-            'conference_time': ai_data.get('conference_time', '').strip(),
-            'conference_place': ai_data.get('conference_place', '').strip(),
+            'conference_name': str(ai_data.get('conference_name', '') or ''),
+            'conference_time': str(ai_data.get('conference_time', '') or ''),
+            'conference_place': str(ai_data.get('conference_place', '') or ''),
 
             # 教材
-            'textbook_series': ai_data.get('textbook_series', '').strip(),
-            'chief_editor': ai_data.get('chief_editor', '').strip(),
-            'associate_editors': ai_data.get('associate_editors', '').strip(),
-            'editorial_board': ai_data.get('editorial_board', '').strip(),
-            'publisher': ai_data.get('publisher', '').strip(),
-            'isbn': ai_data.get('isbn', '').strip(),
-            'cip_number': ai_data.get('cip_number', '').strip(),
-            'publication_year': ai_data.get('publication_year', '').strip(),
-            'publication_month': ai_data.get('publication_month', '').strip(),
-            'edition': ai_data.get('edition', '').strip(),
-            'word_count': ai_data.get('word_count', '').strip(),
-            'price': ai_data.get('price', '').strip(),
-            'textbook_level': ai_data.get('textbook_level', '').strip(),
-            'textbook_type': ai_data.get('textbook_type', '').strip(),
-            'applicable_majors': ai_data.get('applicable_majors', '').strip(),
-            'remarks': ai_data.get('remarks', '').strip(),
+            'textbook_series': str(ai_data.get('textbook_series', '') or ''),
+            'chief_editor': str(ai_data.get('chief_editor', '') or ''),
+            'associate_editors': str(ai_data.get('associate_editors', '') or ''),
+            'editorial_board': str(ai_data.get('editorial_board', '') or ''),
+            'publisher': str(ai_data.get('publisher', '') or ''),
+            'isbn': str(ai_data.get('isbn', '') or ''),
+            'cip_number': str(ai_data.get('cip_number', '') or ''),
+            'publication_year': str(ai_data.get('publication_year', '') or ''),
+            'publication_month': str(ai_data.get('publication_month', '') or ''),
+            'edition': str(ai_data.get('edition', '') or ''),
+            'word_count': str(ai_data.get('word_count', '') or ''),
+            'price': str(ai_data.get('price', '') or ''),
+            'textbook_level': str(ai_data.get('textbook_level', '') or ''),
+            'textbook_type': str(ai_data.get('textbook_type', '') or ''),
+            'applicable_majors': str(ai_data.get('applicable_majors', '') or ''),
+            'remarks': str(ai_data.get('remarks', '') or ''),
 
-            # 专著
-            'author_role': ai_data.get('author_role', '').strip(),
+            # 专著（增强字段）
+            'textbook_series': str(ai_data.get('textbook_series', '') or ''),
+            'chief_editor': str(ai_data.get('chief_editor', '') or ''),
+            'associate_editors': str(ai_data.get('associate_editors', '') or ''),
+            'editorial_board': str(ai_data.get('editorial_board', '') or ''),
+            'publisher': str(ai_data.get('publisher', '') or ''),
+            'isbn': str(ai_data.get('isbn', '') or ''),
+            'cip_number': str(ai_data.get('cip_number', '') or ''),
+            'publication_year': str(ai_data.get('publication_year', '') or ''),
+            'publication_month': str(ai_data.get('publication_month', '') or ''),
+            'publish_date': str(ai_data.get('publish_date', '') or ''),
+            'edition': str(ai_data.get('edition', '') or ''),
+            'word_count': str(ai_data.get('word_count', '') or ''),
+            'price': str(ai_data.get('price', '') or ''),
+            'monograph_type': str(ai_data.get('monograph_type', '') or ''),
+            'applicable_majors': str(ai_data.get('applicable_majors', '') or ''),
+            'remarks': str(ai_data.get('remarks', '') or ''),
 
             # 专利
-            'patent_type': ai_data.get('patent_type', '').strip(),
-            'patent_number': ai_data.get('patent_number', '').strip(),
-            'apply_date': ai_data.get('apply_date', '').strip(),
-            'grant_date': ai_data.get('grant_date', '').strip(),
-            'status': ai_data.get('status', '').strip(),
+            'patent_type': str(ai_data.get('patent_type', '') or ''),
+            'patentee': str(ai_data.get('patentee', '') or ''),
+            'address': str(ai_data.get('address', '') or ''),
+            'inventors': str(ai_data.get('inventors', '') or ''),
+            'status': str(ai_data.get('status', '') or ''),
+            'patent_number': str(ai_data.get('patent_number', '') or ''),
+            'grant_announcement_number': str(ai_data.get('grant_announcement_number', '') or ''),
+            'apply_date': str(ai_data.get('apply_date', '') or ''),
+            'grant_announcement_date': str(ai_data.get('grant_announcement_date', '') or ''),
+            'applicant_at_apply_date': str(ai_data.get('applicant_at_apply_date', '') or ''),
+            'inventor_at_apply_date': str(ai_data.get('inventor_at_apply_date', '') or ''),
 
             # 软著
-            'copyright_number': ai_data.get('copyright_number', '').strip(),
-            'register_date': ai_data.get('register_date', '').strip(),
+            'copyright_owner': str(ai_data.get('copyright_owner', '') or ''),
+            'completion_date': str(ai_data.get('completion_date', '') or ''),
+            'first_publication_date': str(ai_data.get('first_publication_date', '') or ''),
+            'right_acquisition_method': str(ai_data.get('right_acquisition_method', '') or ''),
+            'right_scope': str(ai_data.get('right_scope', '') or ''),
+            'copyright_number': str(ai_data.get('copyright_number', '') or ''),
+            'certificate_number': str(ai_data.get('certificate_number', '') or ''),
+            'register_date': str(ai_data.get('register_date', '') or ''),
 
-            # 教研项目
-            'project_type': ai_data.get('project_type', '').strip(),
-            'funding': ai_data.get('funding', '').strip(),
-            'start_date': ai_data.get('start_date', '').strip(),
-            'end_date': ai_data.get('end_date', '').strip(),
+            # 教研教改和课程建设项目（新增字段）
+            'project_code': str(ai_data.get('project_code', '') or ''),
+            'project_leader': str(ai_data.get('project_leader', '') or ''),
+            'project_members': str(ai_data.get('project_members', '') or ''),
+            'approval_department': str(ai_data.get('approval_department', '') or ''),
+            'approval_date': str(ai_data.get('approval_date', '') or ''),
+            'project_type_name': str(ai_data.get('project_type_name', '') or ''),
+            'project_level_name': str(ai_data.get('project_level_name', '') or ''),
+            'project_category_name': str(ai_data.get('project_category_name', '') or ''),
+            'funding': str(ai_data.get('funding', '') or ''),
+            'start_date': str(ai_data.get('start_date', '') or ''),
+            'end_date': str(ai_data.get('end_date', '') or ''),
 
-            # 获奖类
-            'award_level': ai_data.get('award_level', '').strip(),
-            'award_rank': ai_data.get('award_rank', '').strip(),
-            'award_date': ai_data.get('award_date', '').strip(),
-            'competition_name': ai_data.get('competition_name', '').strip(),
-            'student_name': ai_data.get('student_name', '').strip(),
+            # 教学成果获奖（新增字段）
+            'achievement_type_name': str(ai_data.get('achievement_type_name', '') or ''),
+            'achievement_level_name': str(ai_data.get('achievement_level_name', '') or ''),
+            'award_rank_name': str(ai_data.get('award_rank_name', '') or ''),
+            'main_contributors': str(ai_data.get('main_contributors', '') or ''),
+            'completing_units': str(ai_data.get('completing_units', '') or ''),
+            'award_year': str(ai_data.get('award_year', '') or ''),
+            'certificate_number': str(ai_data.get('certificate_number', '') or ''),
+            'awarding_unit': str(ai_data.get('awarding_unit', '') or ''),
+
+            # 获奖类通用
+            'award_level': str(ai_data.get('award_level', '') or ''),
+            'award_rank': str(ai_data.get('award_rank', '') or ''),
+            'award_date': str(ai_data.get('award_date', '') or ''),
+            'competition_name': str(ai_data.get('competition_name', '') or ''),
+            'student_name': str(ai_data.get('student_name', '') or ''),
         }
 
         return result_data
     except Exception as e:
-        logger.error(f"AI分析成果信息失败：{str(e)}")
-        # 兜底返回空字段
-        base_result = extract_achievement_info(ocr_text)
+        logger.error(f"AI 分析成果信息失败：{str(e)}")
+        # 兜底返回空字段（所有字段强制为空字符串，绝对不能为 None）
         return {
-            'type_name': base_result['type_name'],
-            'title': base_result['title'],
-            'confidence': base_result['confidence'],
+            # 通用字段
+            'type_name': '错误',
+            'title': '',
+            'confidence': 0.5,
             'raw_data': {},
-            # 所有其他字段置空
+
+            # 期刊论文（所有字段默认为空字符串）
             'authors': '',
             'corresponding_authors': '',
             'journal_name': '',
@@ -2479,9 +3543,13 @@ def ai_analyze_achievement_text(ocr_text, api_key):
             'doi': '',
             'publish_year': '',
             'publish_date': '',
+
+            # 会议论文
             'conference_name': '',
             'conference_time': '',
             'conference_place': '',
+
+            # 教材
             'textbook_series': '',
             'chief_editor': '',
             'associate_editors': '',
@@ -2498,18 +3566,62 @@ def ai_analyze_achievement_text(ocr_text, api_key):
             'textbook_type': '',
             'applicable_majors': '',
             'remarks': '',
-            'author_role': '',
+
+            # 专著
+            'textbook_series': '',
+            'chief_editor': '',
+            'associate_editors': '',
+            'editorial_board': '',
+            'publisher': '',
+            'isbn': '',
+            'cip_number': '',
+            'publication_year': '',
+            'publication_month': '',
+            'publish_date': '',
+            'edition': '',
+            'word_count': '',
+            'price': '',
+            'monograph_type': '',
+            'applicable_majors': '',
+            'remarks': '',
+
+            # 专利
             'patent_type': '',
-            'patent_number': '',
-            'apply_date': '',
-            'grant_date': '',
+            'patentee': '',
+            'address': '',
+            'inventors': '',
             'status': '',
+            'patent_number': '',
+            'grant_announcement_number': '',
+            'apply_date': '',
+            'grant_announcement_date': '',
+            'applicant_at_apply_date': '',
+            'inventor_at_apply_date': '',
+
+            # 软著
+            'copyright_owner': '',
+            'completion_date': '',
+            'first_publication_date': '',
+            'right_acquisition_method': '',
+            'right_scope': '',
             'copyright_number': '',
+            'certificate_number': '',
             'register_date': '',
+
+            # 教研教改和课程建设项目（新增字段）
+            'project_code': '',
+            'project_leader': '',
+            'project_members': '',
+            'approval_department': '',
+            'approval_date': '',
             'project_type': '',
+            'project_level': '',
+            'project_category': '',
             'funding': '',
             'start_date': '',
             'end_date': '',
+
+            # 获奖类
             'award_level': '',
             'award_rank': '',
             'award_date': '',
@@ -2532,7 +3644,7 @@ def pdf_to_images(pdf_path, output_dir=None):
         # 适配Windows/Linux/Mac
         poppler_path = None
         if os.name == 'nt':  # Windows系统
-            poppler_path = r"F:\poppler-25.12.0\Library\bin"  # 替换为你的poppler路径
+            poppler_path = r"D:\Poppler\Library\bin"  # 替换为你的poppler路径
 
         # 优化：增加参数减少内存占用，分块处理
         images = convert_from_path(
@@ -2549,6 +3661,102 @@ def pdf_to_images(pdf_path, output_dir=None):
     except Exception as e:
         logger.error(f"PDF转图片失败：{str(e)}")
         raise Exception(f"PDF转图片失败：{str(e)}")
+
+
+
+def init_project_dictionaries():
+    """初始化项目字典表数据（首次运行时调用）"""
+    try:
+        # 先创建所有数据库表
+        db.create_all()
+
+        # 初始化项目类型
+        project_types = [
+            ('普通本科高校教学改革研究项目', 1),
+            ('学位与研究生教育改革研究项目', 2),
+            ('一流本科课程建设项目', 3),
+            ('课程思政建设项目', 4)
+        ]
+        for type_name, sort in project_types:
+            if not ProjectType.query.filter_by(type_name=type_name).first():
+                pt = ProjectType(type_name=type_name, sort_order=sort)
+                db.session.add(pt)
+
+        # 初始化项目状态
+        project_statuses = [
+            ('在研', 1),
+            ('结题', 2),
+            ('延期', 3)
+        ]
+        for status_name, sort in project_statuses:
+            if not ProjectStatus.query.filter_by(status_name=status_name).first():
+                ps = ProjectStatus(status_name=status_name, sort_order=sort)
+                db.session.add(ps)
+
+        # 初始化项目级别
+        project_levels = [
+            ('国家级', 1),
+            ('省部级', 2),
+            ('市厅级', 3),
+            ('校级', 4),
+            ('院级', 5)
+        ]
+        for level_name, sort in project_levels:
+            if not ProjectLevel.query.filter_by(level_name=level_name).first():
+                pl = ProjectLevel(level_name=level_name, sort_order=sort)
+                db.session.add(pl)
+
+        # 初始化项目类别
+        project_categories = [
+            ('重点项目', 1),
+            ('一般项目', 2),
+            ('线上一流课程', 3),
+            ('线上线下混合式一流课程', 4),
+            ('线下一流课程', 5),
+            ('社会实践一流课程', 6),
+            ('虚拟仿真实验教学一流课程', 7)
+        ]
+        for category_name, sort in project_categories:
+            if not ProjectCategory.query.filter_by(category_name=category_name).first():
+                pc = ProjectCategory(category_name=category_name, sort_order=sort)
+                db.session.add(pc)
+
+        # 初始化专利类型
+        patent_types = [
+            ('发明专利', 1),
+            ('实用新型专利', 2),
+            ('外观设计专利', 3)
+        ]
+        for type_name, sort in patent_types:
+            if not PatentType.query.filter_by(type_name=type_name).first():
+                pt = PatentType(type_name=type_name, sort_order=sort)
+                db.session.add(pt)
+
+        # 初始化专利状态
+        patent_statuses = [
+            ('受理', 1),
+            ('初步审查', 2),
+            ('公开', 3),
+            ('实质审查', 4),
+            ('授权', 5)
+        ]
+        for status_name, sort in patent_statuses:
+            if not PatentStatus.query.filter_by(status_name=status_name).first():
+                ps = PatentStatus(status_name=status_name, sort_order=sort)
+                db.session.add(ps)
+
+        db.session.commit()
+        logger.info("项目字典表初始化完成")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"❌ 项目字典表初始化失败：{str(e)}")
+
+
+
+# 在应用启动时自动初始化字典表
+with app.app_context():
+    init_project_dictionaries()
+
 # ---------------------- 4. 核心路由 ----------------------
 @app.route('/')
 def index():
@@ -3002,7 +4210,6 @@ def user_settings():
                 <option value="">请选择</option>
                 <option value="男" {"selected" if current_user.gender == '男' else ''}>男</option>
                 <option value="女" {"selected" if current_user.gender == '女' else ''}>女</option>
-                <option value="其他" {"selected" if current_user.gender == '其他' else ''}>其他</option>
             </select>
         </div>
         <div class="form-group">
@@ -3353,11 +4560,13 @@ def admin_team_manage():
                 if Team.query.filter_by(name=team_name).first():
                     flash('团队名称已存在！', 'danger')
                 else:
+                    leader_user = db.session.get(User, leader_id)
                     new_team = Team(
                         name=team_name,
                         leader_id=leader_id
                     )
                     db.session.add(new_team)
+                    db.session.flush()
                     # 自动将负责人加入团队
                     db.session.add(UserTeam(user_id=leader_id, team_id=new_team.id))
                     flash(f'团队{team_name}创建成功！已将{leader_user.username}设为团队负责人', 'success')
@@ -3783,10 +4992,9 @@ def team_export_achievement():
 
     # 字段配置
     fields_config_map = {
-        'journal': [
+        'journal_paper': [
             {'name': 'title', 'label': '论文名称'},
             {'name': 'authors', 'label': '论文作者'},
-            {'name': 'corresponding_authors', 'label': '通讯作者'},
             {'name': 'journal_name', 'label': '期刊名称'},
             {'name': 'inclusion_status', 'label': '收录情况'},
             {'name': 'year', 'label': '年'},
@@ -3795,20 +5003,18 @@ def team_export_achievement():
             {'name': 'page_range', 'label': '起止页码'},
             {'name': 'doi', 'label': 'DOI'},
             {'name': 'publish_year', 'label': '发表年份'},
-            {'name': 'publish_date', 'label': '发表日期'},
-            {'name': 'attachment', 'label': '论文附件'}
+            {'name': 'attachment', 'label': '附件'}
         ],
-        'conference': [
+        'conference_paper': [
             {'name': 'title', 'label': '论文名称'},
             {'name': 'authors', 'label': '论文作者'},
-            {'name': 'corresponding_authors', 'label': '通讯作者'},
             {'name': 'conference_name', 'label': '会议名称'},
             {'name': 'conference_time', 'label': '会议时间'},
             {'name': 'conference_place', 'label': '会议地点'},
             {'name': 'page_range', 'label': '起止页码'},
             {'name': 'doi', 'label': 'DOI'},
             {'name': 'publish_year', 'label': '发表年份'},
-            {'name': 'attachment', 'label': '论文附件'}
+            {'name': 'attachment', 'label': '附件'}
         ],
         'textbook': [
             {'name': 'title', 'label': '教材名称'},
@@ -3818,72 +5024,82 @@ def team_export_achievement():
             {'name': 'editorial_board', 'label': '编委'},
             {'name': 'publisher', 'label': '出版社'},
             {'name': 'isbn', 'label': 'ISBN'},
-            {'name': 'cip_number', 'label': 'CIP核字号'},
             {'name': 'publication_year', 'label': '出版年份'},
-            {'name': 'publication_month', 'label': '出版月份'},
-            {'name': 'edition', 'label': '版次'},
-            {'name': 'word_count', 'label': '字数'},
-            {'name': 'price', 'label': '定价'},
-            {'name': 'textbook_level', 'label': '教材级别'},
-            {'name': 'textbook_type', 'label': '教材类型'},
-            {'name': 'applicable_majors', 'label': '适用专业'},
-            {'name': 'remarks', 'label': '备注'},
-            {'name': 'textbook_attachment', 'label': '教材附件'}
+            {'name': 'textbook_attachment', 'label': '附件'}
         ],
         'monograph': [
             {'name': 'title', 'label': '专著名称'},
-            {'name': 'isbn', 'label': 'ISBN'},
+            {'name': 'textbook_series', 'label': '专著系列'},
+            {'name': 'chief_editor', 'label': '主编'},
+            {'name': 'associate_editors', 'label': '副主编'},
+            {'name': 'editorial_board', 'label': '编委'},
             {'name': 'publisher', 'label': '出版社'},
-            {'name': 'publish_date', 'label': '出版日期'},
-            {'name': 'author_role', 'label': '作者角色'},
-            {'name': 'attachment', 'label': '附件'}
+            {'name': 'isbn', 'label': 'ISBN'},
+            {'name': 'publication_year', 'label': '出版年份'},
+            {'name': 'monograph_attachment', 'label': '附件'}
         ],
         'teaching_project': [
             {'name': 'title', 'label': '项目名称'},
-            {'name': 'project_type', 'label': '项目类型'},
+            {'name': 'project_code', 'label': '项目编号'},
+            {'name': 'project_leader', 'label': '项目负责人'},
+            {'name': 'project_members', 'label': '项目参与人'},
+            {'name': 'approval_department', 'label': '批准部门'},
+            {'name': 'approval_date', 'label': '立项时间'},
             {'name': 'funding', 'label': '经费'},
-            {'name': 'start_date', 'label': '开始时间'},
-            {'name': 'end_date', 'label': '结束时间'},
-            {'name': 'status', 'label': '项目状态'},
             {'name': 'attachment', 'label': '附件'}
         ],
         'patent': [
             {'name': 'title', 'label': '专利名称'},
-            {'name': 'patent_type', 'label': '专利类型'},
+            {'name': 'inventors', 'label': '发明人'},
             {'name': 'patent_number', 'label': '专利号'},
-            {'name': 'apply_date', 'label': '申请日期'},
-            {'name': 'grant_date', 'label': '授权日期'},
-            {'name': 'status', 'label': '专利状态'},
+            {'name': 'apply_date', 'label': '申请日'},
             {'name': 'attachment', 'label': '附件'}
         ],
         'software_copyright': [
-            {'name': 'title', 'label': '软著名称'},
+            {'name': 'title', 'label': '软件名称'},
+            {'name': 'copyright_owner', 'label': '著作权人'},
             {'name': 'copyright_number', 'label': '登记号'},
+            {'name': 'certificate_number', 'label': '证书号'},
             {'name': 'register_date', 'label': '登记日期'},
             {'name': 'attachment', 'label': '附件'}
         ],
         'teaching_achievement_award': [
-            {'name': 'title', 'label': '获奖名称'},
-            {'name': 'award_level', 'label': '获奖等级'},
-            {'name': 'award_rank', 'label': '获奖等次'},
-            {'name': 'award_date', 'label': '获奖日期'},
+            {'name': 'title', 'label': '成果名称'},
+            {'name': 'achievement_type', 'label': '教学成果奖类型', 'relation': 'achievement_type',
+             'relation_field': 'type_name'},
+            {'name': 'achievement_level', 'label': '成果等级', 'relation': 'achievement_level',
+             'relation_field': 'level_name'},
+            {'name': 'main_contributors', 'label': '主要完成人'},
+            {'name': 'completing_units', 'label': '成果完成单位'},
+            {'name': 'award_year', 'label': '获奖年度'},
+            {'name': 'award_rank', 'label': '获奖等级', 'relation': 'award_rank', 'relation_field': 'rank_name'},
+            {'name': 'certificate_number', 'label': '证书编号'},
+            {'name': 'awarding_unit', 'label': '颁奖单位'},
             {'name': 'attachment', 'label': '附件'}
         ],
         'teaching_competition_award': [
+            {'name': 'award_year', 'label': '获奖年度'},
             {'name': 'title', 'label': '竞赛名称'},
+            {'name': 'award_rank', 'label': '获奖等级', 'relation': 'award_rank', 'relation_field': 'rank_name'},
+            {'name': 'winners', 'label': '获奖人'},
+            {'name': 'winner_unit', 'label': '获奖人所在单位'},
+            {'name': 'competition_level', 'label': '竞赛等级', 'relation': 'competition_level', 'relation_field': 'level_name'},
             {'name': 'competition_name', 'label': '竞赛主办方'},
-            {'name': 'award_level', 'label': '获奖等级'},
-            {'name': 'award_rank', 'label': '获奖等次'},
             {'name': 'award_date', 'label': '获奖日期'},
+            {'name': 'certificate_number', 'label': '证书编号'},
             {'name': 'attachment', 'label': '附件'}
         ],
         'student_guidance_award': [
-            {'name': 'title', 'label': '获奖名称'},
-            {'name': 'competition_name', 'label': '竞赛名称'},
-            {'name': 'student_name', 'label': '获奖学生姓名'},
-            {'name': 'award_level', 'label': '获奖等级'},
-            {'name': 'award_rank', 'label': '获奖等次'},
-            {'name': 'award_date', 'label': '获奖日期'},
+            {'name': 'award_year', 'label': '获奖年度'},
+            {'name': 'title', 'label': '竞赛名称'},
+            {'name': 'award_rank', 'label': '获奖等级', 'relation': 'award_rank', 'relation_field': 'rank_name'},
+            {'name': 'student_name', 'label': '获奖学生'},
+            {'name': 'project_name', 'label': '获奖项目名称'},
+            {'name': 'teacher_name', 'label': '指导教师'},
+            {'name': 'student_unit', 'label': '获奖学生所在单位'},
+            {'name': 'competition_level', 'label': '竞赛等级', 'relation': 'competition_level', 'relation_field': 'level_name'},
+            {'name': 'organizer', 'label': '竞赛主办方'},
+            {'name': 'certificate_number', 'label': '证书编号'},
             {'name': 'attachment', 'label': '附件'}
         ]
     }
@@ -3906,6 +5122,14 @@ def team_export_achievement():
         for field in fields_config:
             field_name = field['name']
             value = getattr(item, field_name, '')
+
+            # 处理关联表字段
+            if field.get('relation'):
+                relation_obj = getattr(item, field['relation'], None)
+                if relation_obj:
+                    value = getattr(relation_obj, field.get('relation_field', 'name'), '')
+                else:
+                    value = ''
 
             if value is None:
                 value = ''
@@ -4068,10 +5292,7 @@ def journal_paper_manage():
         {'name': 'authors', 'label': '论文作者', 'type': 'text', 'required': True},
         {'name': 'corresponding_authors', 'label': '通讯作者', 'type': 'text'},
         {'name': 'journal_name', 'label': '期刊名称', 'type': 'text', 'required': True},
-        {'name': 'inclusion_status', 'label': '收录情况', 'type': 'select', 'options': [
-            'SCI期刊', 'SSCI期刊', 'EI期刊', 'CSSCI期刊', 'CSCD核心库期刊',
-            'CSCD扩展库期刊', 'CSCD扩展库期刊', '北大中文核心期刊', '中国科技核心期刊', '普通期刊', '其它'
-        ]},
+        {'name': 'inclusion_type_ids', 'label': '收录情况', 'type': 'select_multiple', 'options': []},
         {'name': 'year', 'label': '年', 'type': 'integer'},
         {'name': 'volume', 'label': '卷', 'type': 'text'},
         {'name': 'issue', 'label': '期', 'type': 'text'},
@@ -4089,8 +5310,14 @@ def journal_paper_manage():
         return handle_achievement_submit(JournalPaper, fields_config)
 
     if action == 'add':
+        # 获取收录类型选项
+        inclusion_types = InclusionType.query.filter_by(is_active=True).order_by(InclusionType.sort_order).all()
+        fields_config[4]['options'] = [t.type_name for t in inclusion_types]
         return render_achievement_form(JournalPaper, '新增期刊论文', fields_config)
     elif action == 'edit':
+        # 获取收录类型选项
+        inclusion_types = InclusionType.query.filter_by(is_active=True).order_by(InclusionType.sort_order).all()
+        fields_config[4]['options'] = [t.type_name for t in inclusion_types]
         item_id = request.args.get('id')
         return render_achievement_form(JournalPaper, '修改期刊论文', fields_config, item_id)
     elif action == 'delete':
@@ -4118,7 +5345,8 @@ def conference_paper_manage():
         {'name': 'authors', 'label': '论文作者', 'type': 'text', 'required': True},
         {'name': 'corresponding_authors', 'label': '通讯作者', 'type': 'text'},
         {'name': 'conference_name', 'label': '会议名称', 'type': 'text', 'required': True},
-        {'name': 'conference_time', 'label': '会议时间', 'type': 'date'},
+        {'name': 'conference_start_date', 'label': '会议开始日期', 'type': 'date'},
+        {'name': 'conference_end_date', 'label': '会议结束日期', 'type': 'date'},
         {'name': 'conference_place', 'label': '会议地点', 'type': 'text'},
         {'name': 'page_range', 'label': '起止页码', 'type': 'text'},
         {'name': 'doi', 'label': 'DOI', 'type': 'text'},
@@ -4164,17 +5392,15 @@ def textbook_manage():
         {'name': 'editorial_board', 'label': '编委', 'type': 'text'},
         {'name': 'publisher', 'label': '出版社', 'type': 'text'},
         {'name': 'isbn', 'label': 'ISBN', 'type': 'text'},
-        {'name': 'cip_number', 'label': 'CIP核字号', 'type': 'text'},
+        {'name': 'cip_number', 'label': 'CIP 核字号', 'type': 'text'},
         {'name': 'publication_year', 'label': '出版年份', 'type': 'integer'},
         {'name': 'publication_month', 'label': '出版月份', 'type': 'integer'},
         {'name': 'publish_date', 'label': '出版日期', 'type': 'date'},
         {'name': 'edition', 'label': '版次', 'type': 'text'},
         {'name': 'word_count', 'label': '字数', 'type': 'text'},
         {'name': 'price', 'label': '定价', 'type': 'text'},
-        # 教材级别下拉框
-        {'name': 'textbook_level', 'label': '教材级别', 'type': 'select', 'options': [
-            '国家级规划教材', '全国行业规划教材', '协编教材', '自编教材', '其它'
-        ]},
+        # 教材级别下拉框（从数据库读取）
+        {'name': 'textbook_level_id', 'label': '教材级别', 'type': 'select', 'options': []},
         # 教材类型下拉框
         {'name': 'textbook_type', 'label': '教材类型', 'type': 'select', 'options': [
             '纸质教材', '数字教材'
@@ -4217,7 +5443,7 @@ def textbook_manage():
                     try:
                         value = datetime.strptime(value, '%Y-%m-%d').date()
                     except ValueError:
-                        flash(f'{field["label"]}格式错误（需为YYYY-MM-DD）！', 'danger')
+                        flash(f'{field["label"]}格式错误（需为 YYYY-MM-DD）！', 'danger')
                         return redirect(url_for('textbook_manage', action='add'))
             # 整数字段（出版年/月）
             elif field_type == 'integer':
@@ -4235,7 +5461,7 @@ def textbook_manage():
 
             setattr(item, field_name, value)
 
-        # 处理文件上传（字段名更新为textbook_attachment）
+        # 处理文件上传（字段名更新为 textbook_attachment）
         file = request.files.get('textbook_attachment')
         if file and file.filename:
             old_path = getattr(item, 'textbook_attachment', '')
@@ -4259,11 +5485,17 @@ def textbook_manage():
 
         return redirect(url_for('textbook_manage'))
 
-    # 其余逻辑（action分支）保持不变，仅渲染和列表展示会自动适配新字段
+    # 其余逻辑（action 分支）保持不变，仅渲染和列表展示会自动适配新字段
     action = request.args.get('action', 'list')
     if action == 'add':
+        # 获取教材级别选项
+        levels = TextbookLevel.query.filter_by(is_active=True).order_by(TextbookLevel.sort_order).all()
+        fields_config[14]['options'] = [l.level_name for l in levels]
         return render_achievement_form(Textbook, '新增教材', fields_config)
     elif action == 'edit':
+        # 获取教材级别选项
+        levels = TextbookLevel.query.filter_by(is_active=True).order_by(TextbookLevel.sort_order).all()
+        fields_config[14]['options'] = [l.level_name for l in levels]
         item_id = request.args.get('id')
         return render_achievement_form(Textbook, '修改教材', fields_config, item_id)
     elif action == 'delete':
@@ -4279,6 +5511,7 @@ def textbook_manage():
         return render_achievement_list(Textbook, '教材管理', fields_config, current_user)
 
 
+
 # 4. 专著管理（复用通用函数）
 @app.route('/achievement/monograph', methods=['GET', 'POST'])
 def monograph_manage():
@@ -4288,18 +5521,105 @@ def monograph_manage():
 
     fields_config = [
         {'name': 'title', 'label': '专著名称', 'type': 'text', 'required': True},
-        {'name': 'isbn', 'label': 'ISBN', 'type': 'text'},
+        {'name': 'textbook_series', 'label': '专著系列', 'type': 'text'},
+        {'name': 'chief_editor', 'label': '主编', 'type': 'text'},
+        {'name': 'associate_editors', 'label': '副主编', 'type': 'text'},
+        {'name': 'editorial_board', 'label': '编委', 'type': 'text'},
         {'name': 'publisher', 'label': '出版社', 'type': 'text'},
+        {'name': 'isbn', 'label': 'ISBN', 'type': 'text'},
+        {'name': 'cip_number', 'label': 'CIP 核字号', 'type': 'text'},
+        {'name': 'publication_year', 'label': '出版年份', 'type': 'integer'},
+        {'name': 'publication_month', 'label': '出版月份', 'type': 'integer'},
         {'name': 'publish_date', 'label': '出版日期', 'type': 'date'},
-        {'name': 'author_role', 'label': '作者角色', 'type': 'select', 'options': ['独著', '合著', '主编']},
+        {'name': 'edition', 'label': '版次', 'type': 'text'},
+        {'name': 'word_count', 'label': '字数', 'type': 'text'},
+        {'name': 'price', 'label': '定价', 'type': 'text'},
+        # 专著类型下拉框
+        {'name': 'monograph_type', 'label': '专著类型', 'type': 'select', 'options': [
+            '学术专著', '技术专著', '科普著作', '其它'
+        ]},
+        {'name': 'applicable_majors', 'label': '适用专业', 'type': 'text'},
+        {'name': 'remarks', 'label': '备注', 'type': 'text'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
-        {'name': 'attachment', 'label': '附件', 'type': 'file'}
+        # 附件字段名更新
+        {'name': 'monograph_attachment', 'label': '专著附件', 'type': 'file'}
     ]
 
     action = request.args.get('action', 'list')
     if request.method == 'POST':
-        return handle_achievement_submit(Monograph, fields_config)
+        item_id = request.form.get('id')
+        item = db.session.get(Monograph, item_id) if item_id else None
 
+        if item and item.user_id != current_user.id:
+            flash('无权限修改该成果！', 'danger')
+            return redirect(url_for('monograph_manage'))
+
+        if not item:
+            item = Monograph()
+            item.user_id = current_user.id
+            item.create_time = datetime.now()
+
+        # 处理普通字段（包含新增字段）
+        for field in fields_config:
+            field_name = field['name']
+            field_type = field.get('type', 'text')
+            if field_type == 'file':
+                continue
+
+            value = request.form.get(field_name, '').strip()
+
+            # 日期字段处理
+            if field_type == 'date':
+                if value == '':
+                    value = None
+                else:
+                    try:
+                        value = datetime.strptime(value, '%Y-%m-%d').date()
+                    except ValueError:
+                        flash(f'{field["label"]}格式错误（需为 YYYY-MM-DD）！', 'danger')
+                        return redirect(url_for('monograph_manage', action='add'))
+            # 整数字段（出版年/月）
+            elif field_type == 'integer':
+                if value == '':
+                    value = None
+                else:
+                    try:
+                        value = int(value)
+                    except ValueError:
+                        flash(f'{field["label"]}必须为数字！', 'danger')
+                        return redirect(url_for('monograph_manage', action='add'))
+            # 普通文本字段
+            elif value == '':
+                value = None
+
+            setattr(item, field_name, value)
+
+        # 处理文件上传（字段名更新为 monograph_attachment）
+        file = request.files.get('monograph_attachment')
+        if file and file.filename:
+            old_path = getattr(item, 'monograph_attachment', '')
+            if old_path and os.path.exists(old_path):
+                os.remove(old_path)
+            sub_folder = 'monograph'
+            new_path = handle_file_upload(file, sub_folder)
+            setattr(item, 'monograph_attachment', new_path)
+
+        item.update_time = datetime.now()
+
+        # 强制提交数据库
+        try:
+            if not item_id:
+                db.session.add(item)
+            db.session.commit()
+            flash(f'{"修改" if item_id else "新增"}专著成功！', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'操作失败：{str(e)}', 'danger')
+
+        return redirect(url_for('monograph_manage'))
+
+    # 其余逻辑（action 分支）保持不变，仅渲染和列表展示会自动适配新字段
+    action = request.args.get('action', 'list')
     if action == 'add':
         return render_achievement_form(Monograph, '新增专著', fields_config)
     elif action == 'edit':
@@ -4311,29 +5631,41 @@ def monograph_manage():
     elif action == 'export':
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
-        return export_achievement_excel(Textbook, fields_config, current_user, start_date, end_date)
+        return export_achievement_excel(Monograph, fields_config, current_user, start_date, end_date)
     elif action == 'stats':
         return render_achievement_stats(Monograph, '专著', fields_config, current_user)
     else:
         return render_achievement_list(Monograph, '专著管理', fields_config, current_user)
 
-
-# 5. 教研教改项目管理（复用通用函数）
+# 5. 教研教改和课程建设项目管理（复用通用函数）
 @app.route('/achievement/teaching_project', methods=['GET', 'POST'])
 def teaching_project_manage():
     current_user = get_current_user()
     if not current_user:
         return redirect(url_for('login'))
 
+    # 获取字典表选项
+    project_types = [t.type_name for t in ProjectType.query.order_by(ProjectType.sort_order).all()]
+    project_levels = [l.level_name for l in ProjectLevel.query.order_by(ProjectLevel.sort_order).all()]
+    project_categories = [c.category_name for c in ProjectCategory.query.order_by(ProjectCategory.sort_order).all()]
+    project_statuses = [s.status_name for s in ProjectStatus.query.order_by(ProjectStatus.sort_order).all()]
+    
     fields_config = [
         {'name': 'title', 'label': '项目名称', 'type': 'text', 'required': True},
-        {'name': 'project_type', 'label': '项目类型', 'type': 'select', 'options': ['校级', '省级', '国家级']},
-        {'name': 'funding', 'label': '经费', 'type': 'text'},
-        {'name': 'start_date', 'label': '开始时间', 'type': 'date'},
-        {'name': 'end_date', 'label': '结束时间', 'type': 'date'},
-        {'name': 'status', 'label': '项目状态', 'type': 'select', 'options': ['在研', '结题', '延期']},
+        {'name': 'project_code', 'label': '项目编号', 'type': 'text'},
+        {'name': 'project_type_id', 'label': '项目类型', 'type': 'select', 'options': project_types},
+        {'name': 'project_leader', 'label': '项目负责人', 'type': 'text'},
+        {'name': 'project_members', 'label': '项目参与人', 'type': 'text', 'placeholder': '多人请用顿号分隔'},
+        {'name': 'approval_department', 'label': '项目批准部门', 'type': 'text'},
+        {'name': 'approval_date', 'label': '项目立项时间', 'type': 'month'},
+        {'name': 'project_level_id', 'label': '项目级别', 'type': 'select', 'options': project_levels},
+        {'name': 'project_category_id', 'label': '项目类别', 'type': 'select', 'options': project_categories},
+        {'name': 'funding', 'label': '项目经费（元）', 'type': 'number', 'step': '0.01'},
+        {'name': 'start_date', 'label': '项目开始时间', 'type': 'date'},
+        {'name': 'end_date', 'label': '项目结束时间', 'type': 'date'},
+        {'name': 'project_status_id', 'label': '项目状态', 'type': 'select', 'options': project_statuses},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
-        {'name': 'attachment', 'label': '附件', 'type': 'file'}
+        {'name': 'attachment', 'label': '项目附件', 'type': 'file'}
     ]
 
     action = request.args.get('action', 'list')
@@ -4341,10 +5673,10 @@ def teaching_project_manage():
         return handle_achievement_submit(TeachingProject, fields_config)
 
     if action == 'add':
-        return render_achievement_form(TeachingProject, '新增教研教改项目', fields_config)
+        return render_achievement_form(TeachingProject, '新增教研教改和课程建设项目', fields_config)
     elif action == 'edit':
         item_id = request.args.get('id')
-        return render_achievement_form(TeachingProject, '修改教研教改项目', fields_config, item_id)
+        return render_achievement_form(TeachingProject, '修改教研教改和课程建设项目', fields_config, item_id)
     elif action == 'delete':
         item_id = request.args.get('id')
         return handle_achievement_delete(TeachingProject, item_id)
@@ -4353,12 +5685,12 @@ def teaching_project_manage():
         end_date = request.args.get('end_date')
         return export_achievement_excel(TeachingProject, fields_config, current_user, start_date, end_date)
     elif action == 'stats':
-        return render_achievement_stats(TeachingProject, '教研教改项目', fields_config, current_user)
+        return render_achievement_stats(TeachingProject, '教研教改和课程建设项目', fields_config, current_user)
     else:
-        return render_achievement_list(TeachingProject, '教研教改项目管理', fields_config, current_user)
-
+        return render_achievement_list(TeachingProject, '教研教改和课程建设项目管理', fields_config, current_user)
 
 # 6. 专利管理（复用通用函数）
+
 @app.route('/achievement/patent', methods=['GET', 'POST'])
 def patent_manage():
     current_user = get_current_user()
@@ -4367,12 +5699,19 @@ def patent_manage():
 
     fields_config = [
         {'name': 'title', 'label': '专利名称', 'type': 'text', 'required': True},
-        {'name': 'patent_type', 'label': '专利类型', 'type': 'select',
-         'options': ['发明专利', '实用新型专利', '外观专利'], 'required': True},
+        {'name': 'patent_type_id', 'label': '专利类型', 'type': 'select',
+         'options': [(t.id, t.type_name) for t in PatentType.query.order_by(PatentType.sort_order).all()], 'required': True},
+        {'name': 'patentee', 'label': '专利权人', 'type': 'text'},
+        {'name': 'address', 'label': '地址', 'type': 'text'},
+        {'name': 'inventors', 'label': '发明人', 'type': 'text'},
+        {'name': 'patent_status_id', 'label': '专利状态', 'type': 'select',
+         'options': [(s.id, s.status_name) for s in PatentStatus.query.order_by(PatentStatus.sort_order).all()]},
         {'name': 'patent_number', 'label': '专利号', 'type': 'text'},
-        {'name': 'apply_date', 'label': '申请日期', 'type': 'date'},
-        {'name': 'grant_date', 'label': '授权日期', 'type': 'date'},
-        {'name': 'status', 'label': '专利状态', 'type': 'select', 'options': ['申请中', '已授权', '失效']},
+        {'name': 'grant_announcement_number', 'label': '授权公告号', 'type': 'text'},
+        {'name': 'apply_date', 'label': '专利申请日', 'type': 'date'},
+        {'name': 'grant_announcement_date', 'label': '授权公告日', 'type': 'date'},
+        {'name': 'applicant_at_apply_date', 'label': '申请日时申请人', 'type': 'text'},
+        {'name': 'inventor_at_apply_date', 'label': '申请日时发明人', 'type': 'text'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
         {'name': 'attachment', 'label': '附件', 'type': 'file'}
     ]
@@ -4407,8 +5746,14 @@ def software_copyright_manage():
         return redirect(url_for('login'))
 
     fields_config = [
-        {'name': 'title', 'label': '软著名称', 'type': 'text', 'required': True},
+        {'name': 'title', 'label': '软件名称', 'type': 'text', 'required': True},
+        {'name': 'copyright_owner', 'label': '著作权人', 'type': 'text'},
+        {'name': 'completion_date', 'label': '开发完成日期', 'type': 'date'},
+        {'name': 'first_publication_date', 'label': '首次发表日期', 'type': 'date'},
+        {'name': 'right_acquisition_method', 'label': '权利取得方式', 'type': 'select', 'options': ['原始取得', '受让取得', '继承取得', '其他']},
+        {'name': 'right_scope', 'label': '权利范围', 'type': 'select', 'options': ['全部权利', '部分权利']},
         {'name': 'copyright_number', 'label': '登记号', 'type': 'text'},
+        {'name': 'certificate_number', 'label': '证书号', 'type': 'text'},
         {'name': 'register_date', 'label': '登记日期', 'type': 'date'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
         {'name': 'attachment', 'label': '附件', 'type': 'file'}
@@ -4444,10 +5789,15 @@ def teaching_achievement_award_manage():
         return redirect(url_for('login'))
 
     fields_config = [
-        {'name': 'title', 'label': '获奖名称', 'type': 'text', 'required': True},
-        {'name': 'award_level', 'label': '获奖等级', 'type': 'select', 'options': ['校级', '省级', '国家级']},
-        {'name': 'award_rank', 'label': '获奖等次', 'type': 'select',
-         'options': ['一等奖', '二等奖', '三等奖', '优秀奖']},
+        {'name': 'title', 'label': '成果名称', 'type': 'text', 'required': True},
+        {'name': 'achievement_type_id', 'label': '教学成果奖类型', 'type': 'select', 'options': []},
+        {'name': 'achievement_level_id', 'label': '成果等级', 'type': 'select', 'options': []},
+        {'name': 'main_contributors', 'label': '主要完成人', 'type': 'text', 'placeholder': '多人用分号分隔'},
+        {'name': 'completing_units', 'label': '成果完成单位', 'type': 'text', 'placeholder': '多个用分号分隔'},
+        {'name': 'award_year', 'label': '获奖年度', 'type': 'integer'},
+        {'name': 'award_rank_id', 'label': '获奖等级', 'type': 'select', 'options': []},
+        {'name': 'certificate_number', 'label': '证书编号', 'type': 'text'},
+        {'name': 'awarding_unit', 'label': '颁奖单位', 'type': 'text'},
         {'name': 'award_date', 'label': '获奖日期', 'type': 'date'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
         {'name': 'attachment', 'label': '附件', 'type': 'file'}
@@ -4458,8 +5808,20 @@ def teaching_achievement_award_manage():
         return handle_achievement_submit(TeachingAchievementAward, fields_config)
 
     if action == 'add':
+        achievement_types = TeachingAchievementType.query.filter_by(is_active=True).order_by(TeachingAchievementType.sort_order).all()
+        achievement_levels = AchievementLevel.query.filter_by(is_active=True).order_by(AchievementLevel.sort_order).all()
+        award_ranks = AwardRank.query.filter_by(is_active=True).order_by(AwardRank.sort_order).all()
+        fields_config[1]['options'] = [(t.id, t.type_name) for t in achievement_types]
+        fields_config[2]['options'] = [(l.id, l.level_name) for l in achievement_levels]
+        fields_config[6]['options'] = [(r.id, r.rank_name) for r in award_ranks]
         return render_achievement_form(TeachingAchievementAward, '新增教学成果获奖', fields_config)
     elif action == 'edit':
+        achievement_types = TeachingAchievementType.query.filter_by(is_active=True).order_by(TeachingAchievementType.sort_order).all()
+        achievement_levels = AchievementLevel.query.filter_by(is_active=True).order_by(AchievementLevel.sort_order).all()
+        award_ranks = AwardRank.query.filter_by(is_active=True).order_by(AwardRank.sort_order).all()
+        fields_config[1]['options'] = [(t.id, t.type_name) for t in achievement_types]
+        fields_config[2]['options'] = [(l.id, l.level_name) for l in achievement_levels]
+        fields_config[6]['options'] = [(r.id, r.rank_name) for r in award_ranks]
         item_id = request.args.get('id')
         return render_achievement_form(TeachingAchievementAward, '修改教学成果获奖', fields_config, item_id)
     elif action == 'delete':
@@ -4468,7 +5830,7 @@ def teaching_achievement_award_manage():
     elif action == 'export':
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
-        return export_achievement_excel(TeachingCompetitionAward, fields_config, current_user, start_date, end_date)
+        return export_achievement_excel(TeachingAchievementAward, fields_config, current_user, start_date, end_date)
     elif action == 'stats':
         return render_achievement_stats(TeachingAchievementAward, '教学成果获奖', fields_config, current_user)
     else:
@@ -4484,11 +5846,15 @@ def teaching_competition_award_manage():
 
     fields_config = [
         {'name': 'title', 'label': '竞赛名称', 'type': 'text', 'required': True},
+        {'name': 'award_year', 'label': '获奖年度', 'type': 'text'},
+        {'name': 'competition_level_id', 'label': '竞赛等级', 'type': 'select',
+         'options_from_model': 'AchievementLevel'},
+        {'name': 'award_rank_id', 'label': '获奖等级', 'type': 'select', 'options_from_model': 'AwardRank'},
+        {'name': 'winners', 'label': '获奖人', 'type': 'text'},
+        {'name': 'winner_unit', 'label': '获奖人所在单位', 'type': 'text'},
         {'name': 'competition_name', 'label': '竞赛主办方', 'type': 'text'},
-        {'name': 'award_level', 'label': '获奖等级', 'type': 'select', 'options': ['校级', '省级', '国家级']},
-        {'name': 'award_rank', 'label': '获奖等次', 'type': 'select',
-         'options': ['一等奖', '二等奖', '三等奖', '优秀奖']},
         {'name': 'award_date', 'label': '获奖日期', 'type': 'date'},
+        {'name': 'certificate_number', 'label': '证书编号', 'type': 'text'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
         {'name': 'attachment', 'label': '附件', 'type': 'file'}
     ]
@@ -4524,11 +5890,17 @@ def student_guidance_award_manage():
 
     fields_config = [
         {'name': 'title', 'label': '获奖名称', 'type': 'text', 'required': True},
+        {'name': 'award_year', 'label': '获奖年度', 'type': 'text'},
         {'name': 'competition_name', 'label': '竞赛名称', 'type': 'text'},
-        {'name': 'student_name', 'label': '获奖学生姓名', 'type': 'text'},
-        {'name': 'award_level', 'label': '获奖等级', 'type': 'select', 'options': ['校级', '省级', '国家级']},
-        {'name': 'award_rank', 'label': '获奖等次', 'type': 'select',
-         'options': ['一等奖', '二等奖', '三等奖', '优秀奖']},
+        {'name': 'competition_level_id', 'label': '竞赛等级', 'type': 'select',
+         'options_from_model': 'AchievementLevel'},
+        {'name': 'award_rank_id', 'label': '获奖等级', 'type': 'select', 'options_from_model': 'AwardRank'},
+        {'name': 'student_name', 'label': '获奖学生', 'type': 'text'},
+        {'name': 'project_name', 'label': '获奖项目名称', 'type': 'text'},
+        {'name': 'teacher_name', 'label': '指导教师', 'type': 'text'},
+        {'name': 'student_unit', 'label': '获奖学生所在单位', 'type': 'text'},
+        {'name': 'organizer', 'label': '竞赛主办方', 'type': 'text'},
+        {'name': 'certificate_number', 'label': '证书编号', 'type': 'text'},
         {'name': 'award_date', 'label': '获奖日期', 'type': 'date'},
         {'name': 'public_team_ids', 'label': '公开团队', 'type': 'select_multiple'},
         {'name': 'attachment', 'label': '附件', 'type': 'file'}
@@ -4772,7 +6144,13 @@ def stats_dashboard():
         user_ids = [current_user.id]
         stats_scope = '个人'
 
-    # 成果类型统计（饼图数据）
+    def count_user_achievements(model_class):
+        """统计用户参与的成果数量"""
+        # 统计直接拥有的成果数量（user_id 在 user_ids 中）
+        count = model_class.query.filter(model_class.user_id.in_(user_ids)).count()
+        return count
+
+    # 成果类型列表（移除作者关联表）
     achievement_types = [
         ('期刊论文', JournalPaper),
         ('会议论文', ConferencePaper),
@@ -4790,9 +6168,10 @@ def stats_dashboard():
     total_count = 0
 
     for name, model in achievement_types:
-        count = model.query.filter(model.user_id.in_(user_ids)).count()
+        count = count_user_achievements(model)
         type_stats.append({'name': name, 'value': count})
         total_count += count
+
 
     # 准备饼图数据
     type_labels = [item['name'] for item in type_stats]
@@ -4986,29 +6365,27 @@ def journal_paper_import():
     if not current_user or current_user.role == 'admin':
         return redirect(url_for('index'))
 
-    # 检查AI API配置
     zhipu_api_key = get_zhipu_api_key(current_user)
     if not zhipu_api_key:
         content = '''
         <div class="alert alert-danger">
-            未配置智谱AI API Key！<br>
-            请先前往 <a href="/user/api_config">个人设置 > 大模型API配置</a> 配置智谱AI API Key。
+            未配置智谱 AI API Key！<br>
+            请先前往 <a href="/user/api_config">个人设置 > 大模型 API 配置</a> 配置智谱 AI API Key。
         </div>
         <a href="/achievement/journal_paper" class="btn">返回列表</a>
         '''
         return render_base_layout('期刊论文智能导入', content, current_user)
 
     if request.method == 'POST':
-        # 处理导入请求
         keyword = request.form.get('keyword', '').strip()
         max_papers = request.form.get('max_papers', 3, type=int)
-        driver_path = request.form.get('driver_path', r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe')
+        driver_path = request.form.get('driver_path',
+                                       r'C:\Users\mtlxzmd\OneDrive\桌面\新建文件夹\毕设\msedgedriver.exe')
 
         if not keyword:
             flash('搜索关键词不能为空！', 'danger')
             return redirect('/achievement/journal_paper/import')
 
-        # 爬取知网数据
         flash('开始爬取知网数据，请稍候...', 'success')
         papers = crawl_cnki_journal(keyword, max_papers, driver_path)
 
@@ -5020,14 +6397,11 @@ def journal_paper_import():
             '''
             return render_base_layout('期刊论文智能导入', content, current_user)
 
-        # AI分析并入库
         success_count = 0
         for paper in papers:
             try:
-                # AI分析引用文本
                 ai_result = ai_analyze_journal_full(paper['引用格式'], zhipu_api_key)
 
-                # 转换发表日期
                 publish_date = None
                 if paper.get('发表日期'):
                     try:
@@ -5035,7 +6409,6 @@ def journal_paper_import():
                     except:
                         pass
 
-                # 创建期刊论文记录
                 journal_paper = JournalPaper(
                     user_id=current_user.id,
                     title=paper['论文名称'],
@@ -5054,6 +6427,10 @@ def journal_paper_import():
                     update_time=datetime.now()
                 )
                 db.session.add(journal_paper)
+                db.session.flush()
+
+                auto_link_contributors(journal_paper, 'journal_paper', paper['论文作者'], current_user.id)
+
                 success_count += 1
             except Exception as e:
                 print(f"导入期刊论文失败：{e}")
@@ -5098,9 +6475,8 @@ def journal_paper_import():
 def conference_paper_import():
     current_user = get_current_user()
     if not current_user or current_user.role == 'admin':
-        return redirect(url_for('index'))
+        return redirect(url_for('login'))
 
-    # 检查AI API配置
     zhipu_api_key = get_zhipu_api_key(current_user)
     if not zhipu_api_key:
         content = '''
@@ -5113,16 +6489,15 @@ def conference_paper_import():
         return render_base_layout('会议论文智能导入', content, current_user)
 
     if request.method == 'POST':
-        # 处理导入请求
         keyword = request.form.get('keyword', '').strip()
         max_papers = request.form.get('max_papers', 3, type=int)
-        driver_path = request.form.get('driver_path', r'C:\Program Files (x86)\Microsoft\Edge\Application\msedgedriver.exe')
+        driver_path = request.form.get('driver_path',
+                                       r'C:\Users\mtlxzmd\OneDrive\桌面\新建文件夹\毕设\msedgedriver.exe')
 
         if not keyword:
             flash('搜索关键词不能为空！', 'danger')
             return redirect('/achievement/conference_paper/import')
 
-        # 爬取知网数据
         flash('开始爬取知网数据，请稍候...', 'success')
         papers = crawl_cnki_conference(keyword, max_papers, driver_path)
 
@@ -5134,37 +6509,63 @@ def conference_paper_import():
             '''
             return render_base_layout('会议论文智能导入', content, current_user)
 
-        # AI分析并入库
         success_count = 0
         for paper in papers:
             try:
-                # AI分析引用文本
                 ai_result = ai_analyze_citation(paper['引用格式'], zhipu_api_key)
 
-                # 转换会议时间
-                conference_time = None
-                if paper.get('会议时间'):
-                    try:
-                        conference_time = datetime.strptime(paper['会议时间'], '%Y-%m-%d').date()
-                    except:
-                        pass
+                conference_start_date = None
+                conference_end_date = None
+                conference_time_str = None
 
-                # 创建会议论文记录
+                if paper.get('会议时间'):
+                    time_text = paper['会议时间'].strip()
+                    conference_time_str = time_text
+
+                    import re
+                    date_range_pattern = r'(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\s*[-–—]\s*(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})'
+                    match = re.search(date_range_pattern, time_text)
+
+                    if match:
+                        start_year, start_month, start_day = match.group(1), match.group(2), match.group(3)
+                        end_year, end_month, end_day = match.group(4), match.group(5), match.group(6)
+                        try:
+                            conference_start_date = datetime(int(start_year), int(start_month), int(start_day)).date()
+                            conference_end_date = datetime(int(end_year), int(end_month), int(end_day)).date()
+                        except:
+                            pass
+                    else:
+                        single_date_pattern = r'(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})'
+                        match = re.search(single_date_pattern, time_text)
+                        if match:
+                            try:
+                                year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                                conference_start_date = datetime(year, month, day).date()
+                                conference_end_date = conference_start_date
+                            except:
+                                pass
+
                 conference_paper = ConferencePaper(
                     user_id=current_user.id,
                     title=paper['论文名称'],
                     authors=paper['论文作者'],
                     corresponding_authors=paper.get('通讯作者', ''),
                     conference_name=paper['会议名称'],
-                    conference_time=conference_time,
-                    conference_place=paper.get('会议地点') or ai_result.get('会议地点'),
+                    conference_time=conference_time_str,
+                    conference_start_date=conference_start_date,
+                    conference_end_date=conference_end_date,
+                    conference_place=paper.get('会议地点'),
                     page_range=paper.get('起止页码') or ai_result.get('起止页码'),
-                    doi=paper.get('DOI', ''),
-                    publish_year=paper.get('发表年份') or None,
+                    doi=paper.get('DOI') or ai_result.get('DOI'),
+                    publish_year=paper.get('发表年份') or (ai_result.get('年') if ai_result.get('年') else None),
                     create_time=datetime.now(),
                     update_time=datetime.now()
                 )
                 db.session.add(conference_paper)
+                db.session.flush()
+
+                auto_link_contributors(conference_paper, 'conference_paper', paper['论文作者'], current_user.id)
+
                 success_count += 1
             except Exception as e:
                 print(f"导入会议论文失败：{e}")
@@ -5250,8 +6651,21 @@ def ocr_import():
             if not os.path.exists(temp_path):
                 os.makedirs(temp_path)
 
-            filename = secure_filename(file.filename)
-            file_ext = filename.rsplit('.', 1)[1].lower()
+            # 先从原始文件名提取扩展名，避免 secure_filename 过滤掉中文字符后丢失信息
+            original_filename = file.filename
+
+            # 检查是否有扩展名
+            if '.' not in original_filename:
+                flash('文件格式错误，请重新上传！', 'danger')
+                return redirect(request.url)
+
+            # 提取扩展名
+            file_ext = original_filename.rsplit('.', 1)[1].lower()
+
+            # 生成安全文件名（使用时间戳 + 原扩展名）
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            filename = f"{timestamp}.{file_ext}"
+
             upload_path = os.path.join(temp_path, filename)
             file.save(upload_path)
 
@@ -5319,21 +6733,25 @@ def ocr_import():
                 success, msg, type_name, achievement_id = create_achievement_from_ocr(achievement_info, current_user)
                 flash(msg, 'success' if success else 'danger')
 
+
             except Exception as e:
                 # 捕获所有异常并友好提示
                 success = False
                 msg = f'处理失败：{str(e)}'
+                logger.error(f"OCR导入处理异常：{str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
                 flash(msg, 'danger')
             finally:
                 # ========== 清理临时文件 ==========
                 # 删除上传的源文件
                 if os.path.exists(upload_path):
                     os.remove(upload_path)
-                # 删除PDF转换的临时图片
+
+                # 删除 PDF 转换的临时图片
                 for img_path in temp_images:
                     if os.path.exists(img_path):
                         os.remove(img_path)
-
                 # 反馈结果
                 if success:
                     # 映射成果类型到对应路由
@@ -5345,18 +6763,20 @@ def ocr_import():
                         '发明专利': '/achievement/patent',
                         '实用新型专利': '/achievement/patent',
                         '软著': '/achievement/software_copyright',
-                        '成果获奖': '/achievement/teaching_achievement_award',
+                        '教学成果获奖': '/achievement/teaching_achievement_award',
                         '教学竞赛获奖': '/achievement/teaching_competition_award',
                         '指导学生获奖': '/achievement/student_guidance_award',
-                        '其他': '/achievement/journal_paper'
+                        '教研教改和课程建设项目': '/achievement/teaching_project'
                     }
                     target_route = type_route_mapping.get(type_name, '/')
 
-                    # 显示AI分析的详细信息
+                    # 显示 AI 分析详细信息
                     ai_feedback = ""
                     if zhipu_configured and ai_info:
+
                         # 生成全量字段展示
                         field_html = ""
+
                         # 根据成果类型筛选展示字段
                         type_fields = {
                             '期刊论文': [
@@ -5412,8 +6832,14 @@ def ocr_import():
                                 ('状态', 'status'),
                             ],
                             '软著': [
-                                ('软著名称', 'title'),
+                                ('软件名称', 'title'),
+                                ('著作权人', 'copyright_owner'),
+                                ('开发完成日期', 'completion_date'),
+                                ('首次发表日期', 'first_publication_date'),
+                                ('权利取得方式', 'right_acquisition_method'),
+                                ('权利范围', 'right_scope'),
                                 ('登记号', 'copyright_number'),
+                                ('证书号', 'certificate_number'),
                                 ('登记日期', 'register_date'),
                             ],
                             '获奖类': [
@@ -5425,7 +6851,6 @@ def ocr_import():
                                 ('获奖学生', 'student_name'),
                             ]
                         }
-
                         # 匹配当前成果类型的展示字段
                         current_fields = []
                         if ai_info['type_name'] in ['发明专利', '实用新型专利']:
@@ -5435,45 +6860,47 @@ def ocr_import():
                         else:
                             current_fields = type_fields.get(ai_info['type_name'], [])
 
-                        # 生成字段展示HTML
+                        # 生成字段展示 HTML
                         for label, key in current_fields:
                             value = ai_info.get(key, '未识别')
                             if value:
                                 field_html += f"<p><strong>{label}：</strong>{value}</p>"
 
                         ai_feedback = f'''
-                        <div class="alert alert-info">
-                            <h4>AI智能提取的全量字段（置信度：{ai_info.get('confidence', 0):.2f}）</h4>
-                            {field_html if field_html else "<p>未提取到详细字段</p>"}
-                        </div>
-                        '''
-
+                                    <div class="alert alert-info">
+                                        <h4>AI 智能提取的全量字段（置信度：{ai_info.get('confidence', 0):.2f}）</h4>
+                                        {field_html if field_html else "<p>未提取到详细字段</p>"}
+                                    </div>
+                                    '''
                     content = f'''
-                    <div class="alert alert-success">
-                        <h4>操作成功！</h4>
-                        <p>{msg}</p>
-                    </div>
-                    {ai_feedback}
-                    <a href="{target_route}" class="btn">查看成果列表</a>
-                    <a href="/achievement/ocr_import" class="btn">继续识别</a>
-                    '''
+                                <div class="alert alert-success">
+                                    <h4>操作成功！</h4>
+                                    <p>{msg}</p>
+                                </div>
+                                {ai_feedback}
+                                <a href="{target_route}" class="btn">查看成果列表</a>
+                                <a href="/achievement/ocr_import" class="btn">继续识别</a>
+                                '''
                 else:
+                    # 确保 msg 变量一定存在
+                    error_message = locals().get('msg', '处理过程中发生未知错误，请查看日志获取详细信息')
                     content = f'''
-                    <div class="alert alert-danger">
-                        <h4>操作失败</h4>
-                        <p>{msg if 'msg' in locals() else '未知错误'}</p>
-                    </div>
-                    <div class="alert alert-info">
-                        <h4>OCR识别结果（仅展示，不存储）</h4>
-                        <pre style="margin:10px 0; padding:10px; background:#f5f7fa; border-radius:4px; max-height:400px; overflow:auto;">{ocr_text}</pre>
-                        {f"<p>识别成果类型：<strong>{achievement_info.get('type_name', '未知')}</strong>（置信度：{achievement_info.get('confidence', 0)}）</p>" if achievement_info else ""}
-                        {f"<p>识别标题：<strong>{achievement_info.get('title', '未识别')}</strong></p>" if achievement_info else ""}
-                    </div>
-                    <a href="/achievement/ocr_import" class="btn">重新识别</a>
-                    <a href="/" class="btn">返回首页</a>
-                    '''
-                return render_base_layout('OCR智能导入', content, current_user)
+                                <div class="alert alert-danger">
+                                    <h4>操作失败</h4>
+                                    <p>{error_message}</p>
+                                </div>
+                                <div class="alert alert-info">
+                                    <h4>OCR识别结果（仅展示，不存储）</h4>
+                                    <pre style="margin:10px 0; padding:10px; background:#f5f7fa; border-radius:4px; max-height:400px; overflow:auto;">{ocr_text if ocr_text else '无识别内容'}</pre>
+                                    {f"<p>识别成果类型：<strong>{achievement_info.get('type_name', '未知')}</strong>（置信度：{achievement_info.get('confidence', 0)}）</p>" if achievement_info else ""}
+                                    {f"<p>识别标题：<strong>{achievement_info.get('title', '未识别')}</strong></p>" if achievement_info else ""}
+                                </div>
+                                <a href="/achievement/ocr_import" class="btn">重新识别</a>
+                                <a href="/" class="btn">返回首页</a>
 
+                                '''
+
+                return render_base_layout('OCR智能导入', content, current_user)
     # GET请求：显示上传表单（更新提示文本）
     ai_tip = ""
     if not zhipu_configured:
@@ -6051,8 +7478,14 @@ def team_export_specified():
             {'name': 'attachment', 'label': '附件'}
         ]),
         'software_copyright': (SoftwareCopyright, '软著', [
-            {'name': 'title', 'label': '软著名称'},
+            {'name': 'title', 'label': '软件名称'},
+            {'name': 'copyright_owner', 'label': '著作权人'},
+            {'name': 'completion_date', 'label': '开发完成日期'},
+            {'name': 'first_publication_date', 'label': '首次发表日期'},
+            {'name': 'right_acquisition_method', 'label': '权利取得方式'},
+            {'name': 'right_scope', 'label': '权利范围'},
             {'name': 'copyright_number', 'label': '登记号'},
+            {'name': 'certificate_number', 'label': '证书号'},
             {'name': 'register_date', 'label': '登记日期'},
             {'name': 'attachment', 'label': '附件'}
         ]),
@@ -6186,22 +7619,358 @@ def request_entity_too_large(error):
     return render_base_layout('上传失败', content, user), 413
 
 
+# ---------------------- 使用示例：添加期刊论文并关联多个作者 ----------------------
+
+@app.route('/achievement/journal_paper/add_author', methods=['POST'])
+def add_journal_paper_with_authors():
+    """添加期刊论文并关联多个系统用户作者"""
+    current_user = get_current_user()
+
+    # 获取表单数据
+    title = request.form.get('title')
+    authors_str = request.form.get('authors')  # 逗号分隔的作者名字符串
+    corresponding_authors_str = request.form.get('corresponding_authors')
+    journal_name = request.form.get('journal_name')
+    year = request.form.get('year', type=int)
+
+    # 创建论文记录
+    paper = JournalPaper(
+        user_id=current_user.id,
+        title=title,
+        authors=authors_str,
+        corresponding_authors=corresponding_authors_str,
+        journal_name=journal_name,
+        year=year
+    )
+    db.session.add(paper)
+    db.session.flush()  # 获取 paper.id
+
+    # 解析作者列表并关联系统用户
+    import re
+    author_names = [name.strip() for name in re.split(r'[;,;,,]', authors_str)]
+    corresponding_names = [name.strip() for name in
+                           re.split(r'[;,;,,]', corresponding_authors_str or '')] if corresponding_authors_str else []
+
+    db.session.commit()
+    flash('期刊论文添加成功！', 'success')
+    return redirect(url_for('journal_paper_list'))
+
+
+# ---------------------- 查询示例：获取某用户参与的所有期刊论文 ----------------------
+
+def get_user_journal_papers(user_id):
+    """获取用户参与的所有期刊论文（包含作为作者和关联人）"""
+    owned_papers = JournalPaper.query.filter_by(user_id=user_id).all()
+
+    contributed_papers = JournalPaper.query.join(AchievementContributor).filter(
+        AchievementContributor.user_id == user_id,
+        AchievementContributor.achievement_type == 'journal_paper'
+    ).all()
+
+    all_papers = {p.id: p for p in owned_papers}
+    for p in contributed_papers:
+        all_papers[p.id] = p
+
+    return list(all_papers.values())
+
+
+# ---------------------- 查询示例：获取论文的详细信息（包含作者信息） ----------------------
+
+def get_paper_detail_with_authors(paper_id):
+    """获取期刊论文详情及作者信息"""
+    paper = JournalPaper.query.get(paper_id)
+    if not paper:
+        return None
+
+    # 从 authors 字段解析作者信息（修复：支持多种分隔符）
+    import re
+    authors_info = []
+    if paper.authors:
+        author_names = [name.strip() for name in re.split(r'[;,;,,]', paper.authors)]
+        corresponding_names = [name.strip() for name in
+                               re.split(r'[;,;,,]', paper.corresponding_authors or '')] if paper.corresponding_authors else []
+
+        for idx, name in enumerate(author_names, start=1):
+            authors_info.append({
+                'name': name,
+                'author_order': idx,
+                'is_corresponding': name in corresponding_names
+            })
+
+    return {
+        'paper': paper,
+        'authors': authors_info
+    }
+
+
+@app.route('/achievement/journal_paper/submit', methods=['POST'])
+def submit_journal_paper():
+    """提交期刊论文（支持多作者关联）"""
+    current_user = get_current_user()
+
+    title = request.form.get('title')
+    authors_str = request.form.get('authors')
+    corresponding_authors_str = request.form.get('corresponding_authors')
+    journal_name = request.form.get('journal_name')
+    year = request.form.get('year', type=int)
+    volume = request.form.get('volume')
+    issue = request.form.get('issue')
+    page_range = request.form.get('page_range')
+    doi = request.form.get('doi')
+
+    paper = JournalPaper(
+        user_id=current_user.id,
+        title=title,
+        authors=authors_str,
+        corresponding_authors=corresponding_authors_str,
+        journal_name=journal_name,
+        year=year,
+        volume=volume,
+        issue=issue,
+        page_range=page_range,
+        doi=doi
+    )
+    db.session.add(paper)
+    db.session.flush()
+
+    auto_link_contributors(paper, 'journal_paper', authors_str, current_user.id)
+
+    db.session.commit()
+
+    flash('期刊论文添加成功！', 'success')
+    return redirect(url_for('journal_paper_list'))
+
+
+@app.route('/my_achievements')
+def my_achievements():
+    """我的成果（包含作为作者参与的成果）"""
+    current_user = get_current_user()
+
+    # 查询期刊论文（仅查看拥有的）
+    papers = JournalPaper.query.filter_by(user_id=current_user.id).all()
+
+    # 标记是否拥有
+    papers_data = []
+    for paper in papers:
+        papers_data.append({
+            'paper': paper,
+            'is_owner': paper.user_id == current_user.id,
+        })
+
+    content = f'''
+    <h2>我的期刊论文</h2>
+    <div class="alert alert-info">
+        显示您拥有的论文（共{len(papers_data)}篇）
+    </div>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>序号</th>
+                <th>论文名称</th>
+                <th>期刊名称</th>
+                <th>年份</th>
+                <th>您的角色</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+    '''
+
+    for idx, item in enumerate(papers_data, start=1):
+        paper = item['paper']
+        role_label = '<span class="badge badge-success">拥有者</span>'
+
+        action_btns = f'<a href="/achievement/journal_paper/edit?id={paper.id}" class="btn btn-sm">编辑</a>'
+
+        content += f'''
+            <tr>
+                <td>{idx}</td>
+                <td>{paper.title}</td>
+                <td>{paper.journal_name}</td>
+                <td>{paper.year or '-'}</td>
+                <td>{role_label}</td>
+                <td>{action_btns}</td>
+            </tr>
+        '''
+
+    content += '''
+        </tbody>
+    </table>
+    '''
+
+    return render_base_layout('我的期刊论文', content, current_user)
+
+
+@app.route('/admin/dict_manage/<dict_type>', methods=['GET', 'POST'])
+def admin_dict_manage(dict_type):
+    """管理员-字典表维护（增删改查）"""
+    current_user = get_current_user()
+    if not current_user or current_user.role != 'admin':
+        flash('无管理员权限！', 'danger')
+        return redirect(url_for('index'))
+
+    # 字典表映射
+    dict_mapping = {
+        'achievement_type': (TeachingAchievementType, '教学成果奖类型', ['type_name']),
+        'achievement_level': (AchievementLevel, '成果等级', ['level_name']),
+        'award_rank': (AwardRank, '获奖等级', ['rank_name'])
+    }
+
+    if dict_type not in dict_mapping:
+        flash('无效的字典类型！', 'danger')
+        return redirect(url_for('index'))
+
+    model, dict_name, name_fields = dict_mapping[dict_type]
+
+    # 处理操作
+    if request.method == 'POST':
+        action = request.form.get('action')
+        try:
+            if action == 'add':
+                # 添加新记录
+                name_value = request.form.get(name_fields[0])
+                sort_order = request.form.get('sort_order', 0, type=int)
+
+                if model.query.filter_by(**{name_fields[0]: name_value}).first():
+                    flash(f'{name_fields[0]}已存在！', 'danger')
+                else:
+                    new_record = model(**{name_fields[0]: name_value, 'sort_order': sort_order})
+                    db.session.add(new_record)
+                    db.session.commit()
+                    flash(f'{dict_name}添加成功！', 'success')
+
+            elif action == 'edit':
+                # 编辑记录
+                record_id = request.form.get('id')
+                record = db.session.get(model, record_id)
+                if record:
+                    for field in name_fields:
+                        setattr(record, field, request.form.get(field))
+                    record.sort_order = request.form.get('sort_order', 0, type=int)
+                    db.session.commit()
+                    flash(f'{dict_name}更新成功！', 'success')
+
+            elif action == 'delete':
+                # 删除记录
+                record_id = request.form.get('id')
+                record = db.session.get(model, record_id)
+                if record:
+                    db.session.delete(record)
+                    db.session.commit()
+                    flash(f'{dict_name}删除成功！', 'success')
+
+        except Exception as e:
+            db.session.rollback()
+            flash(f'操作失败：{str(e)}', 'danger')
+
+    # 查询所有记录
+    records = model.query.order_by(model.sort_order).all()
+
+    # 渲染页面
+    dict_html = f'''
+    <h2>{dict_name}管理</h2>
+
+    <!-- 添加记录表单 -->
+    <div style="margin-bottom:30px; padding:20px; border:1px solid #eee; border-radius:8px;">
+        <h3>添加{dict_name}</h3>
+        <form method="POST">
+            <input type="hidden" name="action" value="add">
+            <div class="form-group">
+                <label>{name_fields[0]} <span class="required">*</span></label>
+                <input type="text" name="{name_fields[0]}" required>
+            </div>
+            <div class="form-group">
+                <label>排序顺序</label>
+                <input type="number" name="sort_order" value="0">
+            </div>
+            <button type="submit" class="btn">添加</button>
+        </form>
+    </div>
+
+    <!-- 记录列表 -->
+    <table style="width:100%; border-collapse:collapse;">
+        <thead>
+            <tr style="background:#f5f7fa;">
+                <th style="padding:10px; border:1px solid #dee2e6;">{name_fields[0]}</th>
+                <th style="padding:10px; border:1px solid #dee2e6;">排序</th>
+                <th style="padding:10px; border:1px solid #dee2e6;">状态</th>
+                <th style="padding:10px; border:1px solid #dee2e6;">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+    '''
+
+    for record in records:
+        status_text = '启用' if record.is_active else '禁用'
+        status_style = 'color: #27ae60;' if record.is_active else 'color: #95a5a6;'
+
+        dict_html += f'''
+        <tr>
+            <td style="padding:10px; border:1px solid #dee2e6;">{getattr(record, name_fields[0])}</td>
+            <td style="padding:10px; border:1px solid #dee2e6;">{record.sort_order}</td>
+            <td style="padding:10px; border:1px solid #dee2e6;"><span style="{status_style}">{status_text}</span></td>
+            <td style="padding:10px; border:1px solid #dee2e6;">
+                <button onclick="editRecord({record.id}, '{getattr(record, name_fields[0])}', {record.sort_order})" class="btn" style="padding:5px 10px; font-size:12px;">编辑</button>
+                <form method="POST" style="display:inline;" onsubmit="return confirm('确定删除？')">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="{record.id}">
+                    <button type="submit" class="btn" style="padding:5px 10px; font-size:12px; background:#e74c3c;">删除</button>
+                </form>
+            </td>
+        </tr>
+        '''
+
+    dict_html += '''
+        </tbody>
+    </table>
+
+    <!-- 编辑弹窗 -->
+    <div id="editModal" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:white; padding:30px; border-radius:8px; box-shadow:0 0 20px rgba(0,0,0,0.3); z-index:1000;">
+        <h3>编辑''' + dict_name + '''</h3>
+        <form method="POST">
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="id" id="edit_id">
+            <div class="form-group">
+                <label>''' + name_fields[0] + '''</label>
+                <input type="text" name="''' + name_fields[0] + '''" id="edit_name" required>
+            </div>
+            <div class="form-group">
+                <label>排序顺序</label>
+                <input type="number" name="sort_order" id="edit_sort" value="0">
+            </div>
+            <button type="submit" class="btn">保存</button>
+            <button type="button" onclick="closeEditModal()" class="btn" style="background:#95a5a6;">取消</button>
+        </form>
+    </div>
+
+    <script>
+        function editRecord(id, name, sort) {
+            document.getElementById('edit_id').value = id;
+            document.getElementById('edit_name').value = name;
+            document.getElementById('edit_sort').value = sort;
+            document.getElementById('editModal').style.display = 'block';
+        }
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+    </script>
+    '''
+
+    return render_base_layout(f'{dict_name}管理', dict_html, current_user)
+
+
 # ---------------------- 5. 初始化数据库（强制重建+防重复创建） ----------------------
 def init_database():
-    """初始化数据库（强制删除旧文件+创建新表+默认管理员）"""
+    """初始化数据库（强制删除旧文件 + 创建新表 + 默认管理员）"""
     with app.app_context():
-        # 第一步：强制删除旧数据库文件（关键）
         if os.path.exists(DB_FILE):
             try:
                 os.remove(DB_FILE)
             except Exception as e:
                 raise Exception(f'无法删除旧数据库文件，请手动删除 {DB_FILE} 后重试')
 
-        # 第二步：创建所有新表
         db.create_all()
 
-        # 第三步：创建默认管理员（先检查是否存在，避免重复创建）
-        # 重点修改：先查询是否已有admin用户，存在则跳过
         admin = User.query.filter_by(username='admin').first()
         if not admin:
             admin = User(
@@ -6212,17 +7981,109 @@ def init_database():
             )
             admin.set_password('admin123')
             db.session.add(admin)
-            db.session.commit()
+
+        inclusion_data = [
+            {'type_name': 'SCI 期刊', 'type_code': 'SCI', 'description': '科学引文索引期刊', 'sort_order': 1},
+            {'type_name': 'SSCI 期刊', 'type_code': 'SSCI', 'description': '社会科学引文索引期刊', 'sort_order': 2},
+            {'type_name': 'EI 期刊', 'type_code': 'EI', 'description': '工程索引期刊', 'sort_order': 3},
+            {'type_name': 'CSSCI 期刊', 'type_code': 'CSSCI', 'description': '中文社会科学引文索引期刊',
+             'sort_order': 4},
+            {'type_name': 'CSCD 核心库期刊', 'type_code': 'CSCD_CORE',
+             'description': '中国科学引文数据库核心库期刊', 'sort_order': 5},
+            {'type_name': 'CSCD 扩展库期刊', 'type_code': 'CSCD_EXT', 'description': '中国科学引文数据库扩展库期刊',
+             'sort_order': 6},
+            {'type_name': '北大中文核心期刊', 'type_code': 'PKU_CORE', 'description': '北京大学中文核心期刊',
+             'sort_order': 7},
+            {'type_name': '中国科技核心期刊', 'type_code': 'CSTPCD', 'description': '中国科技论文统计源期刊',
+             'sort_order': 8},
+            {'type_name': '普通期刊', 'type_code': 'GENERAL', 'description': '普通期刊', 'sort_order': 9},
+            {'type_name': '其它', 'type_code': 'OTHER', 'description': '其他收录类型', 'sort_order': 10},
+        ]
+
+        for data in inclusion_data:
+            existing = InclusionType.query.filter_by(type_code=data['type_code']).first()
+            if not existing:
+                inclusion_type = InclusionType(**data)
+                db.session.add(inclusion_type)
+
+        textbook_level_data = [
+            {'level_name': '国家级规划教材', 'level_code': 'NATIONAL', 'description': '国家级规划教材',
+             'sort_order': 1},
+            {'level_name': '全国行业规划教材', 'level_code': 'INDUSTRY', 'description': '全国行业规划教材',
+             'sort_order': 2},
+            {'level_name': '协编教材', 'level_code': 'COEDIT', 'description': '协编教材', 'sort_order': 3},
+            {'level_name': '自编教材', 'level_code': 'SELF', 'description': '自编教材', 'sort_order': 4},
+            {'level_name': '其它', 'level_code': 'OTHER', 'description': '其它', 'sort_order': 5},
+        ]
+
+        for data in textbook_level_data:
+            existing = TextbookLevel.query.filter_by(level_code=data['level_code']).first()
+            if not existing:
+                textbook_level = TextbookLevel(**data)
+                db.session.add(textbook_level)
+
+        db.session.commit()
 
 
 # ---------------------- 6. 启动应用 ----------------------
 if __name__ == '__main__':
-    # 初始化数据库（强制重建）
-    init_database()
-
-    # 关键修复：在应用上下文中初始化FFmpeg
     with app.app_context():
-        init_ffmpeg_env()
+        db.create_all()
 
-    # 启动Flask应用
+        # 创建默认管理员账户
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                employee_id='admin',
+                email='admin@hntcm.edu.cn',
+                role='admin'
+            )
+            admin.set_password('admin123')
+            db.session.add(admin)
+            db.session.commit()
+
+        # 初始化教学成果奖类型
+        if TeachingAchievementType.query.count() == 0:
+            default_types = [
+                TeachingAchievementType(type_name='湖南中医药大学教学成果奖', sort_order=1),
+                TeachingAchievementType(type_name='湖南中医药大学研究生教学成果奖', sort_order=2),
+                TeachingAchievementType(type_name='湖南省计算机学会高等教育教学成果奖', sort_order=3),
+                TeachingAchievementType(type_name='其它', sort_order=4)
+            ]
+            db.session.add_all(default_types)
+            db.session.commit()
+            print("初始化教学成果奖类型数据")
+
+        # 初始化成果等级
+        if AchievementLevel.query.count() == 0:
+            default_levels = [
+                AchievementLevel(level_name='国家级', sort_order=1),
+                AchievementLevel(level_name='省部级', sort_order=2),
+                AchievementLevel(level_name='市厅级', sort_order=3),
+                AchievementLevel(level_name='校级', sort_order=4),
+                AchievementLevel(level_name='院级', sort_order=5),
+                AchievementLevel(level_name='其它', sort_order=6)
+            ]
+            db.session.add_all(default_levels)
+            db.session.commit()
+            print("初始化成果等级数据")
+
+        # 初始化获奖等级
+        if AwardRank.query.count() == 0:
+            default_ranks = [
+                AwardRank(rank_name='特等奖', sort_order=1),
+                AwardRank(rank_name='一等奖', sort_order=2),
+                AwardRank(rank_name='二等奖', sort_order=3),
+                AwardRank(rank_name='三等奖', sort_order=4),
+                AwardRank(rank_name='优秀奖', sort_order=5),
+                AwardRank(rank_name='其它', sort_order=6)
+            ]
+            db.session.add_all(default_ranks)
+            db.session.commit()
+            print("初始化获奖等级数据")
+
+        print("数据库初始化完成")
+
     app.run(debug=True, host='0.0.0.0', port=5000)
+
